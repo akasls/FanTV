@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useAppStore } from '@/store/useAppStore'
-import { ArrowLeftIcon, PlusIcon, TrashIcon, PencilIcon, ChevronUpIcon, ChevronDownIcon, ArrowDownTrayIcon, ArrowUpTrayIcon } from '@heroicons/react/24/outline'
+import { ArrowLeftIcon, PlusIcon, TrashIcon, PencilIcon, ChevronUpIcon, ChevronDownIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 
 interface Source {
@@ -14,7 +14,7 @@ interface Source {
 }
 
 export default function SourcesManager() {
-  const { currentMode, currentUser, userSourceOrder, setUserSourceOrder } = useAppStore()
+  const { currentMode, currentUser, userSourceOrder, setUserSourceOrder, userDisabledSources, setUserDisabledSources } = useAppStore()
   const isAdmin = currentUser?.role === 'ADMIN'
   const canSeeAdult = currentUser?.allowAdultMode === true
   const [sources, setSources] = useState<Source[]>([])
@@ -327,7 +327,7 @@ export default function SourcesManager() {
               </div>
 
               <div className="flex flex-col flex-1 overflow-hidden mr-4">
-                <span className="font-medium text-gray-900 dark:text-gray-100 flex items-center space-x-2">
+                <span className={`font-medium flex items-center space-x-2 ${userDisabledSources.includes(src.id) ? 'opacity-40 line-through text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}>
                   <span>{src.name}</span>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full border ${src.mode === 'Adult' ? 'border-red-500 bg-red-50 text-red-600 dark:bg-red-500/10' : 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-500/10'}`}>
                     {src.mode === 'Adult' ? '圣贤' : '普通'}
@@ -336,22 +336,34 @@ export default function SourcesManager() {
                 <span className="text-xs text-gray-400 mt-1 truncate">{src.apiUrl}</span>
               </div>
 
-              {isAdmin && (
-              <div className="flex space-x-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition">
+              <div className="flex space-x-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition mr-2">
                 <button 
-                  onClick={() => handleEditClick(src)}
-                  className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-full transition"
+                  onClick={() => {
+                     if (userDisabledSources.includes(src.id)) setUserDisabledSources(userDisabledSources.filter(id => id !== src.id));
+                     else setUserDisabledSources([...userDisabledSources, src.id]);
+                  }}
+                  className={`p-2 rounded-full transition ${userDisabledSources.includes(src.id) ? 'text-gray-400 bg-gray-100 dark:bg-gray-800' : 'text-green-500 hover:bg-green-50 dark:hover:bg-green-500/10'}`}
+                  title={userDisabledSources.includes(src.id) ? '点击启用' : '点击停用'}
                 >
-                  <PencilIcon className="w-5 h-5" />
+                  {userDisabledSources.includes(src.id) ? <EyeSlashIcon className="w-5 h-5 text-red-400" /> : <EyeIcon className="w-5 h-5" />}
                 </button>
-                <button 
-                  onClick={() => handleDelete(src.id, src.name)}
-                  className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-full transition"
-                >
-                  <TrashIcon className="w-5 h-5" />
-                </button>
+                {isAdmin && (
+                  <>
+                    <button 
+                      onClick={() => handleEditClick(src)}
+                      className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-500/10 rounded-full transition"
+                    >
+                      <PencilIcon className="w-5 h-5" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(src.id, src.name)}
+                      className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-full transition"
+                    >
+                      <TrashIcon className="w-5 h-5" />
+                    </button>
+                  </>
+                )}
               </div>
-              )}
             </li>
           ))}
         </ul>

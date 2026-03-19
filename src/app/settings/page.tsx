@@ -56,6 +56,9 @@ export default function SettingsPage() {
      const oldText = btn.innerText
      btn.innerText = '同步中...'
      try {
+       const { userDisabledSources } = useAppStore.getState();
+       const prefixedOrder = userSourceOrder.map(id => userDisabledSources.includes(id) ? '!' + id : id);
+
        if (historyData.length === 0 && favoriteData.length === 0 && userSourceOrder.length === 0) {
           const res = await fetch('/api/users/sync', {
              method: 'POST',
@@ -71,7 +74,7 @@ export default function SettingsPage() {
        await fetch('/api/users/sync', {
          method: 'POST',
          headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ action: 'upsert', historyData, favoriteData, sourceOrder: userSourceOrder })
+         body: JSON.stringify({ action: 'upsert', historyData, favoriteData, sourceOrder: prefixedOrder })
        })
        
        btn.innerText = '同步完成!'

@@ -43,6 +43,8 @@ interface AppState {
   
   userSourceOrder: string[]
   setUserSourceOrder: (order: string[]) => void
+  userDisabledSources: string[]
+  setUserDisabledSources: (sources: string[]) => void
 
   // Transient Session Search states
   selectedSourceId: string
@@ -97,7 +99,12 @@ export const useAppStore = create<AppState>()(
         if (user) {
            set({ allowAdultMode: user.allowAdultMode })
            if (user.sourceOrder) {
-             try { set({ userSourceOrder: JSON.parse(user.sourceOrder) }) } catch(e){}
+             try { 
+               const parsed = JSON.parse(user.sourceOrder) as string[]
+               const order = parsed.map((id: string) => id.startsWith('!') ? id.slice(1) : id)
+               const disabled = parsed.filter((id: string) => id.startsWith('!')).map((id: string) => id.slice(1))
+               set({ userSourceOrder: order, userDisabledSources: disabled })
+             } catch(e){}
            }
         }
       },
@@ -116,7 +123,12 @@ export const useAppStore = create<AppState>()(
           if (data.user) {
              set({ allowAdultMode: data.user.allowAdultMode })
              if (data.user.sourceOrder) {
-               try { set({ userSourceOrder: JSON.parse(data.user.sourceOrder) }) } catch(e){}
+               try { 
+                 const parsed = JSON.parse(data.user.sourceOrder) as string[]
+                 const order = parsed.map((id: string) => id.startsWith('!') ? id.slice(1) : id)
+                 const disabled = parsed.filter((id: string) => id.startsWith('!')).map((id: string) => id.slice(1))
+                 set({ userSourceOrder: order, userDisabledSources: disabled })
+               } catch(e){}
              }
           } else {
              set({ allowAdultMode: false })
@@ -130,6 +142,8 @@ export const useAppStore = create<AppState>()(
       
       userSourceOrder: [],
       setUserSourceOrder: (order) => set({ userSourceOrder: order }),
+      userDisabledSources: [],
+      setUserDisabledSources: (sources) => set({ userDisabledSources: sources }),
       
       selectedSourceId: '',
       searchTerm: '',

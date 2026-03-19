@@ -21,7 +21,7 @@ export default function Home() {
   const { 
     currentMode, homeFeedList, setHomeFeedList, searchAllSources, selectedSourceGlobal, setSelectedSourceGlobal, setSearchAllSources,
     searchTerm, setSearchTerm, inputTerm, setInputTerm, selectedCategoryId, setSelectedCategoryId, drillDownSourceId, setDrillDownSourceId,
-    selectedSourceId, setSelectedSourceId
+    selectedSourceId, setSelectedSourceId, userDisabledSources
   } = useAppStore()
   
   const router = useRouter()
@@ -100,13 +100,16 @@ export default function Home() {
     if (!mounted) return
     fetch(`/api/sources?mode=${currentMode}`).then(r => r.json()).then(data => {
       if (Array.isArray(data) && data.length > 0) {
-         setSources(data)
-         const matched = data.find(s => s.id === selectedSourceGlobal)
-         if (!matched) {
-            setSelectedSourceGlobal(data[0].id)
-            setSelectedSourceId(data[0].id)
-         } else {
+         const active = data.filter((s: any) => !userDisabledSources.includes(s.id))
+         setSources(active)
+         const matched = active.find((s: any) => s.id === selectedSourceGlobal)
+         if (!matched && active.length > 0) {
+            setSelectedSourceGlobal(active[0].id)
+            setSelectedSourceId(active[0].id)
+         } else if (matched) {
             setSelectedSourceId(selectedSourceGlobal)
+         } else {
+            setSelectedSourceId('')
          }
       } else {
          setSources([])
@@ -114,7 +117,7 @@ export default function Home() {
       }
     }).catch(console.error)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mounted, currentMode])
+  }, [mounted, currentMode, userDisabledSources])
 
   // Reset function
   const resetAndFetch = useCallback(() => {
