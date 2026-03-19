@@ -1,0 +1,982 @@
+'use client'
+import { useEffect, useRef, Suspense, useState, useCallback, useMemo } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { 
+  ArrowLeftIcon, 
+  HeartIcon, 
+  InformationCircleIcon,
+  PlayIcon, 
+  PauseIcon, 
+  SpeakerWaveIcon, 
+  SpeakerXMarkIcon, 
+  ArrowsPointingOutIcon, 
+  ArrowsPointingInIcon, 
+  ForwardIcon 
+} from '@heroicons/react/24/outline'
+import { HeartIcon as HeartSolid } from '@heroicons/react/24/solid'
+import { useAppStore } from '@/store/useAppStore'
+
+function formatTime(time: number) {
+  if (isNaN(time) || !isFinite(time)) return '00:00'
+  const m = Math.floor(time / 60)
+  const s = Math.floor(time % 60)
+  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
+}
+
+function PlayerContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  const epName = searchParams.get('epName')
+  const rawUrl = searchParams.get('epUrl')
+  const sourceId = searchParams.get('sourceId')
+  const id = searchParams.get('id')
+  
+  const { currentMode, favoriteData, setFavoriteData, enableShortcuts } = useAppStore()
+  
+  const playerContainerRef = useRef<HTMLDivElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  
+  const [video, setVideo] = useState<any>(null)
+  const [episodes, setEpisodes] = useState<{name: string, url: string}[]>([])
+  const [showInfo, setShowInfo] = useState(false)
+  
+  const [altSources, setAltSources] = useState<any[]>([])
+  const [showAltSources, setShowAltSources] = useState(false)
+  const [pingResults, setPingResults] = useState<Record<string, {ping: number, speed: number | null}>>({})
+  const pingedRefs = useRef<Set<string>>(new Set())
+
+  const formatSpeed = (kbps: number | null) => {
+     if (!kbps) return ''
+     if (kbps > 1024) return `${(kbps / 1024).toFixed(1)}MB/s`
+     return `${Math.round(kbps)}KB/s`
+  }
+
+  useEffect(() => {
+     if (showAltSources) {
+        const sourcesToPing = [...altSources];
+        if (video && sourceId) {
+           sourcesToPing.push({ ...video, _sourceId: sourceId });
+        }
+        
+        sourcesToPing.forEach(alt => {
+           if (pingedRefs.current.has(alt._sourceId)) return;
+           pingedRefs.current.add(alt._sourceId);
+           
+           try {
+             let urlToTest = '';
+             if (alt.vod_play_url) {
+                const firstEp = alt.vod_play_url.split('$$$')[0].split('#')[0].split('$');
+                if (firstEp[1]) urlToTest = firstEp[1];
+             } else if (alt.vod_pic) {
+                urlToTest = alt.vod_pic;
+             }
+             
+             if (!urlToTest) return;
+             
+             const startInit = performance.now();
+             const controller = new AbortController();
+             const timeout = setTimeout(() => controller.abort(), 8000);
+             
+             (async () => {
+                 try {
+                     const res = await fetch(urlToTest, { signal: controller.signal });
+                     const latency = Math.round(performance.now() - startInit);
+                     
+                     const text = await res.text();
+                     let nextUrl = urlToTest;
+                     const lines = text.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+                     if (lines.length > 0) {
+                         let n1 = lines[0].trim();
+                         nextUrl = n1.startsWith('http') ? n1 : new URL(n1, urlToTest).href;
+                     }
+                     
+                     if (nextUrl.includes('.m3u8')) {
+                         const res2 = await fetch(nextUrl, { signal: controller.signal });
+                         const text2 = await res2.text();
+                         const lines2 = text2.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+                         if (lines2.length > 0) {
+                             let n2 = lines2[0].trim();
+                             nextUrl = n2.startsWith('http') ? n2 : new URL(n2, nextUrl).href;
+                         }
+                     }
+
+                     const tsRes = await fetch(nextUrl, { signal: controller.signal });
+                     let receivedLength = 0;
+                     if (tsRes.body) {
+                         const reader = tsRes.body.getReader();
+                         const streamStart = performance.now();
+                         try {
+                             while(true) {
+                                 const { done, value } = await reader.read();
+                                 if (done) break;
+                                 if (value) receivedLength += value.length;
+                                 
+                                 if (receivedLength > 200 * 1024) {
+                                     reader.cancel().catch(() => {});
+                                     break;
+                                 }
+                             }
+                         } catch(e) {}
+                         const streamEnd = performance.now();
+                         const streamDuration = (streamEnd - streamStart) / 1000;
+                         const speedKbps = receivedLength > 0 && streamDuration > 0 ? (receivedLength / 1024) / streamDuration : null;
+                         
+                         clearTimeout(timeout);
+                         setPingResults(prev => ({ ...prev, [alt._sourceId]: { ping: latency, speed: speedKbps } }));
+                     } else {
+                         throw new Error('No body stream');
+                     }
+                     
+                 } catch(err) {
+                    const fallbackStart = performance.now();
+                    fetch(urlToTest, { method: 'HEAD', mode: 'no-cors' })
+                    .then(() => {
+                       clearTimeout(timeout);
+                       setPingResults(prev => ({ ...prev, [alt._sourceId]: { ping: Math.round(performance.now() - fallbackStart), speed: null } }));
+                    })
+                    .catch(() => {
+                       clearTimeout(timeout);
+                       setPingResults(prev => ({ ...prev, [alt._sourceId]: { ping: -1, speed: null } }));
+                    });
+                 }
+             })();
+           } catch(e) {}
+        });
+     }
+  }, [altSources, showAltSources, video, sourceId])
+
+  const sortedAltSources = useMemo(() => {
+     return [...altSources].sort((a, b) => {
+        const resA = pingResults[a._sourceId];
+        const resB = pingResults[b._sourceId];
+        
+        const scoreA = resA ? (resA.ping === -1 ? -99999 : (resA.speed || 0) * 10 - resA.ping) : -50000;
+        const scoreB = resB ? (resB.ping === -1 ? -99999 : (resB.speed || 0) * 10 - resB.ping) : -50000;
+        
+        return scoreB - scoreA;
+     });
+  }, [altSources, pingResults]);
+  
+  const bestSourceId = sortedAltSources.length > 0 && pingResults[sortedAltSources[0]._sourceId] && pingResults[sortedAltSources[0]._sourceId].ping !== -1 ? sortedAltSources[0]._sourceId : null;
+  
+  const isFavorite = favoriteData.some(v => v.videoId === String(id) && v._sourceId === sourceId)
+
+  // Custom Player States
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [currentTime, setCurrentTime] = useState(0)
+  const [duration, setDuration] = useState(0)
+  const [isMetadataLoaded, setIsMetadataLoaded] = useState(false)
+  const [volume, setVolume] = useState(1)
+  const [isMuted, setIsMuted] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [showControls, setShowControls] = useState(true)
+
+  const lastTimeRef = useRef(0)
+  const lastDurRef = useRef(0)
+  const episodesContainerRef = useRef<HTMLDivElement>(null)
+
+  // Save history periodically & on unmount
+  useEffect(() => {
+     const saveToHistory = () => {
+        if (sourceId && id && epName && rawUrl) {
+           useAppStore.getState().updateHistoryRecord(id, sourceId, epName, rawUrl, lastTimeRef.current, lastDurRef.current)
+        }
+     }
+     const interval = setInterval(saveToHistory, 5000)
+     return () => {
+        clearInterval(interval)
+        saveToHistory()
+     }
+  }, [sourceId, id, epName, rawUrl])
+
+  useEffect(() => {
+    const onScrollTop = () => {
+       episodesContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+    window.addEventListener('custom-scroll-top', onScrollTop)
+    return () => window.removeEventListener('custom-scroll-top', onScrollTop)
+  }, [])
+
+
+  // Gesture States
+  const [brightness, setBrightness] = useState(1)
+  const [seekingDelta, setSeekingDelta] = useState<number | null>(null)
+  const touchStartRef = useRef<{x: number, y: number, time: number, type: 'none' | 'volume' | 'brightness' | 'seek', startVol: number, startBright: number, startSeek: number} | null>(null)
+
+  // Volume UI States
+  const [showVolumeSlider, setShowVolumeSlider] = useState(false)
+  const volumeTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const exposeVolumeSlider = () => {
+     setShowControls(true)
+     setShowVolumeSlider(true)
+     if (volumeTimeoutRef.current) clearTimeout(volumeTimeoutRef.current)
+     volumeTimeoutRef.current = setTimeout(() => {
+        setShowVolumeSlider(false)
+     }, 2000)
+  }
+
+  useEffect(() => {
+    if (sourceId && id) {
+      fetch(`/api/video?sourceId=${sourceId}&vodId=${id}`)
+        .then(r => r.json())
+        .then(data => {
+           if(data.video) {
+              setVideo(data.video)
+              
+              const { historyData, setHistoryData, currentMode } = useAppStore.getState()
+              const exists = historyData.find(h => h.videoId === String(id) && h._sourceId === sourceId)
+              if (!exists) {
+                  setHistoryData([{
+                      videoId: String(id),
+                      videoName: data.video.vod_name,
+                      videoPic: data.video.vod_pic,
+                      mode: currentMode,
+                      _sourceId: sourceId,
+                      _sourceName: data.video._sourceName || '',
+                      epName: '',
+                      epUrl: '',
+                      currentTime: 0,
+                      duration: 0
+                  }, ...historyData])
+              }
+
+              if(data.video.vod_play_url) {
+                const players = data.video.vod_play_url.split('$$$')
+                if(players.length > 0) {
+                  const eps = players[0].split('#').map((ep: string) => {
+                     const parts = ep.split('$')
+                     return { name: parts[0] || 'Unknown', url: parts[1] || ep }
+                  }).filter((e: any) => e.url)
+                  setEpisodes(eps)
+                  
+                  if (!rawUrl && eps.length > 0) {
+                     const hist = useAppStore.getState().historyData.find(v => String(v.videoId) === String(id) && String(v._sourceId) === String(sourceId))
+                     let targetEp = eps[0]
+                     if (hist && hist.epUrl) {
+                       const match = eps.find((e: {name: string, url: string}) => e.url === hist.epUrl)
+                       if (match) targetEp = match
+                     }
+                     router.replace(`/play?sourceId=${sourceId}&id=${id}&epName=${encodeURIComponent(targetEp.name)}&epUrl=${encodeURIComponent(targetEp.url)}`)
+                  }
+                }
+              }
+              
+              if (data.video.vod_name) {
+                 fetch(`/api/videos?wd=${encodeURIComponent(data.video.vod_name)}&mode=${useAppStore.getState().currentMode}&searchAll=true`)
+                 .then(r => r.json())
+                 .then(searchData => {
+                    if (searchData.list) {
+                       const alt = searchData.list.filter((v: any) => v._sourceId !== sourceId && v.vod_name === data.video.vod_name)
+                       setAltSources(alt)
+                    }
+                 }).catch(console.error)
+              }
+           }
+        })
+        .catch(err => console.error("Failed to fetch episodes", err))
+    }
+  }, [sourceId, id])
+  
+  useEffect(() => {
+    if (!rawUrl || !videoRef.current) return
+    let hls: any
+    import('hls.js').then((Hls) => {
+      if (Hls.default.isSupported()) {
+        
+        // --- AdBlocker XHR Loader ---
+        class AdBlockXhrLoader extends Hls.default.DefaultConfig.loader {
+           load(context: any, config: any, callbacks: any) {
+             const OriginalSuccess = callbacks.onSuccess;
+             callbacks.onSuccess = (response: any, stats: any, context: any) => {
+               if ((context.type === 'manifest' || context.type === 'level') && response.data) {
+                  const lines = response.data.split('\n');
+                  const result = [];
+                  let isSkipNext = false;
+                  
+                  // Analyze dominant CDN Host to heuristic-block ad injections
+                  const tsLines = lines.filter((l: string) => l && !l.startsWith('#'));
+                  const hostCounts: Record<string, number> = {};
+                  tsLines.forEach((l: string) => {
+                     try { const h = new URL(l).host; hostCounts[h] = (hostCounts[h] || 0) + 1; } catch(e) {}
+                  });
+                  let dominantHost: string | null = null;
+                  let maxCount = 0;
+                  for (const h in hostCounts) {
+                     if (hostCounts[h] > maxCount) { maxCount = hostCounts[h]; dominantHost = h; }
+                  }
+
+                  // Scan and clean the manifest text
+                  for (let i = 0; i < lines.length; i++) {
+                    const line = lines[i];
+                    const trimmed = line.trim();
+                    if (!trimmed) continue;
+
+                    // Extinf Segment definition
+                    if (trimmed.startsWith('#EXTINF:')) {
+                       const nextLine = lines[i+1]?.trim();
+                       if (nextLine && !nextLine.startsWith('#')) {
+                          let isAd = false;
+                          // 1. Image extensions disguised as TS slices
+                          if (/\.(jpg|jpeg|png|gif|bmp|webp)(\?.*)?$/i.test(nextLine)) isAd = true;
+                          
+                          // 2. Cross-CDN injections (AppleCMS typical pattern)
+                          if (dominantHost && maxCount > 5) {
+                             try { if (new URL(nextLine).host !== dominantHost) isAd = true; } catch(e) {}
+                          }
+                          
+                          if (isAd) {
+                             isSkipNext = true; // Mark to drop this segment entirely
+                             continue;
+                          }
+                       }
+                    }
+                    
+                    if (isSkipNext && !trimmed.startsWith('#')) {
+                       isSkipNext = false; // Drop the actual chunk URL
+                       continue;
+                    }
+
+                    result.push(line);
+                  }
+                  
+                  // Reconstruct clean manifest
+                  response.data = result.join('\n');
+               }
+               OriginalSuccess(response, stats, context);
+             };
+             super.load(context, config, callbacks);
+           }
+        }
+
+        const { enableAdBlock, historyData } = useAppStore.getState()
+        const hist = historyData.find(v => String(v.videoId) === String(id) && String(v._sourceId) === String(sourceId))
+        let startPos = -1
+        if (hist && hist.epUrl === rawUrl && hist.currentTime && hist.currentTime > 0) {
+           startPos = hist.currentTime
+        }
+
+        const hlsConfig: any = {}
+        if (startPos > 0) hlsConfig.startPosition = startPos
+        if (enableAdBlock) {
+           hlsConfig.pLoader = AdBlockXhrLoader as any
+        }
+
+        hls = new Hls.default(hlsConfig)
+        
+        hls.loadSource(rawUrl)
+        hls.attachMedia(videoRef.current!)
+        hls.on(Hls.default.Events.MANIFEST_PARSED, () => {
+           if (startPos > 0) {
+               setTimeout(() => { if (videoRef.current) videoRef.current.currentTime = startPos }, 100)
+           }
+           const p = videoRef.current?.play()
+           if (p !== undefined) p.catch((e: any) => { if (e.name !== 'AbortError') console.log('Autoplay blocked:', e) })
+        })
+      } 
+      else if (videoRef.current!.canPlayType('application/vnd.apple.mpegurl')) {
+        videoRef.current!.src = rawUrl
+        
+        const { historyData } = useAppStore.getState()
+        const hist = historyData.find(v => String(v.videoId) === String(id) && String(v._sourceId) === String(sourceId))
+        let startPos = -1
+        if (hist && hist.epUrl === rawUrl && hist.currentTime && hist.currentTime > 0) {
+           startPos = hist.currentTime
+        }
+
+        videoRef.current!.addEventListener('loadedmetadata', () => {
+           if (startPos > 0) videoRef.current!.currentTime = startPos
+           const p = videoRef.current?.play()
+           if (p !== undefined) p.catch((e: any) => { if (e.name !== 'AbortError') console.log('Autoplay blocked:', e) })
+        }, { once: true })
+      }
+    }).catch(err => {
+        console.error("Failed to load HLS.js", err)
+    })
+    return () => {
+      if (hls) hls.destroy()
+    }
+  }, [rawUrl])
+
+  // Scroll active episode into view
+  const activeEpRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (activeEpRef.current) {
+        activeEpRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+    }
+  }, [rawUrl, epName, episodes])
+
+  // Find next episode
+  const currentIndex = episodes.findIndex(ep => ep.url === rawUrl || ep.name === epName)
+  const nextEpisode = currentIndex >= 0 && currentIndex < episodes.length - 1 ? episodes[currentIndex + 1] : null
+
+  const handleNext = useCallback((e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    if (nextEpisode) {
+      router.replace(`/play?sourceId=${sourceId}&id=${id}&epName=${encodeURIComponent(nextEpisode.name)}&epUrl=${encodeURIComponent(nextEpisode.url)}`)
+    }
+  }, [nextEpisode, router, sourceId, id])
+
+  // Controls Visibility
+  const handleMouseMove = () => {
+    setShowControls(true)
+    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current)
+    controlsTimeoutRef.current = setTimeout(() => {
+      if (isPlaying) setShowControls(false)
+    }, 4000)
+  }
+
+  // Keyboard controls
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const { enableShortcuts } = useAppStore.getState()
+      if (!enableShortcuts || !videoRef.current) return
+      
+      const isInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA'
+      if (isInput) return
+
+      switch(e.key) {
+        case 'ArrowRight':
+          e.preventDefault()
+          videoRef.current.currentTime = Math.min(videoRef.current.duration, videoRef.current.currentTime + 10)
+          setShowControls(true)
+          break
+        case 'ArrowLeft':
+          e.preventDefault()
+          videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 10)
+          setShowControls(true)
+          break
+        case 'ArrowUp':
+          e.preventDefault()
+          const newVolUp = Math.min(1, videoRef.current.volume + 0.1)
+          videoRef.current.volume = newVolUp
+          setVolume(newVolUp)
+          if (newVolUp > 0) setIsMuted(false)
+          exposeVolumeSlider()
+          break
+        case 'ArrowDown':
+          e.preventDefault()
+          const newVolDown = Math.max(0, videoRef.current.volume - 0.1)
+          videoRef.current.volume = newVolDown
+          setVolume(newVolDown)
+          if (newVolDown === 0) setIsMuted(true)
+          exposeVolumeSlider()
+          break
+        case ' ':
+          e.preventDefault()
+          if (videoRef.current.paused) {
+             const p = videoRef.current.play()
+             if (p !== undefined) p.catch(() => {})
+          } else {
+             videoRef.current.pause()
+          }
+          break
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+  
+  // Audio handlers
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = parseFloat(e.target.value)
+    setVolume(v)
+    if (videoRef.current) {
+      videoRef.current.volume = v
+      if (v > 0) setIsMuted(false)
+      else setIsMuted(true)
+    }
+    exposeVolumeSlider()
+  }
+
+  const toggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!videoRef.current) return
+    if (isMuted) {
+      videoRef.current.muted = false
+      setIsMuted(false)
+      videoRef.current.volume = volume > 0 ? volume : 0.5
+      setVolume(volume > 0 ? volume : 0.5)
+    } else {
+      videoRef.current.muted = true
+      setIsMuted(true)
+    }
+  }
+
+  const toggleFavorite = () => {
+    if (!video) return
+    if (isFavorite) {
+      setFavoriteData(favoriteData.filter(v => !(String(v.videoId) === String(id) && String(v._sourceId) === String(sourceId))))
+    } else {
+      const favItem = {
+        videoId: String(id),
+        videoName: video.vod_name,
+        videoPic: video.vod_pic,
+        mode: currentMode,
+        _sourceId: sourceId,
+        _sourceName: video._sourceName
+      }
+      setFavoriteData([...favoriteData, favItem])
+    }
+  }
+
+  // Fullscreen handlers
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
+  }, [])
+
+  const toggleFullscreen = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    const container = playerContainerRef.current
+    if (!container) return
+    
+    if (!document.fullscreenElement) {
+      if (container.requestFullscreen) {
+         container.requestFullscreen().catch(err => console.error("Fullscreen err:", err))
+      } else if ((container as any).webkitRequestFullscreen) {
+         (container as any).webkitRequestFullscreen()
+      } else if ((container as any).msRequestFullscreen) {
+         (container as any).msRequestFullscreen()
+      }
+    } else {
+      if (document.exitFullscreen) {
+         document.exitFullscreen()
+      } else if ((document as any).webkitExitFullscreen) {
+         (document as any).webkitExitFullscreen()
+      } else if ((document as any).msExitFullscreen) {
+         (document as any).msExitFullscreen()
+      }
+    }
+  }
+
+  const togglePlay = (e?: React.MouseEvent) => {
+    e?.stopPropagation()
+    if (videoRef.current) {
+      if (isPlaying) {
+         videoRef.current.pause()
+      } else {
+         const p = videoRef.current.play()
+         if (p !== undefined) p.catch(() => {})
+      }
+    }
+  }
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const t = parseFloat(e.target.value)
+    setCurrentTime(t)
+    if (videoRef.current) videoRef.current.currentTime = t
+    setShowControls(true)
+  }
+
+  // Touch Gesture Handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    const { enableShortcuts } = useAppStore.getState()
+    if (!enableShortcuts || e.touches.length !== 1) return
+    const touch = e.touches[0]
+    touchStartRef.current = {
+       x: touch.clientX,
+       y: touch.clientY,
+       time: Date.now(),
+       type: 'none',
+       startVol: videoRef.current?.volume || 0,
+       startBright: brightness,
+       startSeek: videoRef.current?.currentTime || 0
+    }
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    const { enableShortcuts } = useAppStore.getState()
+    if (!enableShortcuts || !touchStartRef.current || !videoRef.current) return
+    
+    const touch = e.touches[0]
+    const deltaX = touch.clientX - touchStartRef.current.x
+    const deltaY = touch.clientY - touchStartRef.current.y
+    const absX = Math.abs(deltaX)
+    const absY = Math.abs(deltaY)
+
+    if (touchStartRef.current.type === 'none') {
+       if (absX > 20 && absX > absY) {
+          touchStartRef.current.type = 'seek'
+       } else if (absY > 20 && absY > absX) {
+          const rect = playerContainerRef.current!.getBoundingClientRect()
+          const isLeftSide = touchStartRef.current.x < rect.left + rect.width / 2
+          touchStartRef.current.type = isLeftSide ? 'brightness' : 'volume'
+       } else {
+          return
+       }
+    }
+
+    if (touchStartRef.current.type === 'seek') {
+       const rect = playerContainerRef.current!.getBoundingClientRect()
+       const percent = deltaX / Math.max(rect.width, 1)
+       const deltaSeconds = percent * 180 // Max +/- 3 mins per full screen swipe
+       setSeekingDelta(deltaSeconds)
+       setShowControls(true)
+    } else if (touchStartRef.current.type === 'volume') {
+       const rect = playerContainerRef.current!.getBoundingClientRect()
+       const percent = -deltaY / Math.max(rect.height, 1)
+       const newVol = Math.max(0, Math.min(1, touchStartRef.current.startVol + percent))
+       videoRef.current.volume = newVol
+       setVolume(newVol)
+       setIsMuted(newVol === 0)
+       exposeVolumeSlider()
+    } else if (touchStartRef.current.type === 'brightness') {
+       const rect = playerContainerRef.current!.getBoundingClientRect()
+       const percent = -deltaY / Math.max(rect.height, 1)
+       const newBright = Math.max(0.1, Math.min(1, touchStartRef.current.startBright + percent))
+       setBrightness(newBright)
+    }
+  }
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!touchStartRef.current) return
+    
+    if (touchStartRef.current.type === 'seek' && seekingDelta !== null && videoRef.current) {
+       let newTime = touchStartRef.current.startSeek + seekingDelta
+       newTime = Math.max(0, Math.min(videoRef.current.duration || 0, newTime))
+       videoRef.current.currentTime = newTime
+       setCurrentTime(newTime)
+    }
+    
+    if (touchStartRef.current.type === 'none') {
+       setShowControls(prev => !prev)
+    }
+
+    touchStartRef.current = null
+    setSeekingDelta(null)
+  }
+
+  const [isLoaderForcedOff, setIsLoaderForcedOff] = useState(false)
+
+  useEffect(() => {
+     if (rawUrl && duration === 0 && !isMetadataLoaded) {
+        const t = setTimeout(() => setIsLoaderForcedOff(true), 6000)
+        return () => clearTimeout(t)
+     }
+  }, [rawUrl, duration, isMetadataLoaded])
+
+  const isVideoReady = duration > 0 || isMetadataLoaded;
+  const showLoadingOverlay = !isLoaderForcedOff && (!video || (!rawUrl && episodes.length > 0) || !isVideoReady)
+
+  return (
+    <div className="fixed inset-y-0 right-0 left-0 md:left-64 z-40 bg-[var(--background)] flex flex-col h-[100dvh] overflow-hidden">
+       {/* Full Screen Loading Overlay (Cross-faded with calculated PC offset for Episodes) */}
+       <div className={`absolute inset-0 z-[100] flex items-center justify-center bg-[var(--background)] transition-opacity duration-500 ${showLoadingOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+          <div className="flex flex-col items-center space-y-4">
+             <svg className="animate-spin h-10 w-10 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24">
+               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+             </svg>
+             <span className="text-gray-500 dark:text-gray-400 text-sm font-medium tracking-widest animate-pulse">获取影片信息中...</span>
+          </div>
+       </div>
+       {/* Top Persistent Header */}
+       <header className={`flex items-center justify-between pt-4 md:pt-6 px-4 md:px-8 pb-3 min-h-[64px] shrink-0 bg-transparent z-50 transition-opacity duration-500 ${showLoadingOverlay ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+         <div className="flex items-center">
+            <button onClick={() => router.back()} className="p-2 -ml-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition">
+              <ArrowLeftIcon className="w-6 h-6 text-gray-800 dark:text-gray-200" />
+            </button>
+            <span className="ml-1 text-base md:text-lg font-bold text-gray-800 dark:text-gray-200 truncate max-w-[200px] md:max-w-md">
+               {video?.vod_name ? `${video.vod_name} ${epName ? `- ${epName}` : ''}` : epName || '影片播放'}
+            </span>
+         </div>
+         <div className="flex items-center space-x-2">
+           <button onClick={() => setShowInfo(true)} className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400">
+             <InformationCircleIcon className="w-6 h-6" />
+           </button>
+           <button onClick={toggleFavorite} className="p-2 -mr-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400">
+             {isFavorite ? <HeartSolid className="w-6 h-6 text-red-500" /> : <HeartIcon className="w-6 h-6" />}
+           </button>
+         </div>
+       </header>
+       <div className={`flex-1 flex flex-col w-full overflow-y-auto overflow-x-hidden relative transition-opacity duration-500 ${showLoadingOverlay ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
+         {/* Video Section */}
+         <div 
+           ref={playerContainerRef}
+           onMouseMove={handleMouseMove}
+           onMouseLeave={() => isPlaying && setShowControls(false)}
+           onClick={togglePlay}
+           onDoubleClick={toggleFullscreen}
+           className="relative flex items-center justify-center bg-black shrink-0 aspect-video lg:max-h-[75vh] w-full"
+         >
+           {/* Gesture Overlay (Touch only) */}
+           <div 
+             className="absolute inset-0 z-20 touch-none"
+             onTouchStart={handleTouchStart}
+             onTouchMove={handleTouchMove}
+             onTouchEnd={handleTouchEnd}
+           />
+
+           <video 
+             ref={videoRef}
+             controls={false}
+             className="w-full h-full max-h-full object-contain"
+             playsInline
+             autoPlay
+             onPlay={() => setIsPlaying(true)}
+             onPause={() => setIsPlaying(false)}
+             onTimeUpdate={() => {
+                const ct = videoRef.current?.currentTime || 0
+                setCurrentTime(ct)
+                lastTimeRef.current = ct
+             }}
+             onLoadedMetadata={() => {
+                setIsMetadataLoaded(true)
+                const dur = videoRef.current?.duration || 0
+                setDuration(dur)
+                lastDurRef.current = dur
+
+                const hist = useAppStore.getState().historyData.find(v => String(v.videoId) === String(id) && String(v._sourceId) === String(sourceId))
+                if (hist && hist.epUrl === rawUrl && hist.currentTime && hist.currentTime > 0) {
+                   if (hist.currentTime < (hist.duration || dur || Infinity) - 10) {
+                      videoRef.current!.currentTime = hist.currentTime
+                   }
+                }
+             }}
+             onEnded={() => {
+                setIsPlaying(false)
+                handleNext()
+             }}
+           />
+
+           {/* Brightness Overlay */}
+           <div 
+             className="absolute inset-0 bg-black pointer-events-none z-30 transition-opacity duration-150" 
+             style={{ opacity: 1 - brightness }}
+           ></div>
+
+           {/* Seeking Delta Popup */}
+           {seekingDelta !== null && (
+             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-black/70 text-white px-4 py-2 rounded-xl text-lg font-bold z-40 shadow-lg pointer-events-none">
+               {seekingDelta > 0 ? '+' : ''}{Math.round(seekingDelta)}s
+               <div className="text-xs text-center font-normal text-gray-300 mt-1">
+                 {formatTime(Math.max(0, Math.min(duration, (touchStartRef.current?.startSeek || 0) + seekingDelta)))}
+               </div>
+             </div>
+           )}
+
+           {/* Controls Bottom Bar */}
+           <div onClick={e => e.stopPropagation()} className={`absolute bottom-0 left-0 right-0 px-4 pb-4 pt-16 bg-gradient-to-t from-black/90 to-transparent z-40 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'} flex flex-col pointer-events-auto`}>
+             <div className="w-full h-1.5 bg-white/30 rounded-full mb-4 cursor-pointer relative group/progress">
+               <input 
+                  type="range" min={0} max={duration || 100} value={currentTime} 
+                  onChange={handleSeek}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+               />
+               <div className="absolute top-0 left-0 bottom-0 bg-blue-500 rounded-full pointer-events-none" style={{ width: `${Math.min(100, (currentTime/(duration||1))*100)}%` }}></div>
+               <div className="absolute top-1/2 -mt-1.5 w-3 h-3 bg-white rounded-full shadow transition-transform scale-0 group-hover/progress:scale-100 pointer-events-none" style={{ left: `${Math.min(100, (currentTime/(duration||1))*100)}%`, transform: 'translate(-50%, -50%)' }}></div>
+             </div>
+
+             <div className="flex items-center justify-between">
+               <div className="flex items-center space-x-4">
+                  <button onClick={togglePlay} className="text-white hover:text-blue-400 transition transform hover:scale-110">
+                     {isPlaying ? <PauseIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" />}
+                  </button>
+
+                  {nextEpisode && (
+                    <button onClick={handleNext} className="text-white hover:text-blue-400 transition transform hover:scale-110" title={`下一集: ${nextEpisode.name}`}>
+                      <ForwardIcon className="w-6 h-6" />
+                    </button>
+                  )}
+
+                  <div className="hidden sm:flex items-center space-x-2" onMouseEnter={() => setShowVolumeSlider(true)} onMouseLeave={() => setShowVolumeSlider(false)}>
+                    <button onClick={toggleMute} className="text-white hover:text-blue-400 transition transform hover:scale-110">
+                      {isMuted || volume === 0 ? <SpeakerXMarkIcon className="w-6 h-6" /> : <SpeakerWaveIcon className="w-6 h-6" />}
+                    </button>
+                    <input 
+                      type="range" min={0} max={1} step={0.05} value={isMuted ? 0 : volume} 
+                      onChange={handleVolumeChange}
+                      className={`transition-all duration-300 accent-blue-500 ${showVolumeSlider ? 'w-20 opacity-100' : 'w-0 opacity-0'}`}
+                    />
+                  </div>
+                  
+                  <div className="text-[10px] sm:text-xs text-white/80 font-medium font-mono tracking-wide absolute sm:static right-16 sm:right-auto">
+                     {formatTime(currentTime)} / {formatTime(duration)}
+                  </div>
+               </div>
+
+               <div className="flex items-center">
+                  <button onClick={toggleFullscreen} className="text-white hover:text-blue-400 transition transform hover:scale-110">
+                     {isFullscreen ? <ArrowsPointingInIcon className="w-6 h-6" /> : <ArrowsPointingOutIcon className="w-6 h-6" />}
+                  </button>
+               </div>
+             </div>
+           </div>
+           
+           {/* Big Play Button Overlay for Mobile Taps and Paused State */}
+           {!isPlaying && (
+             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
+                <div onClick={togglePlay} className="bg-black/50 p-4 rounded-full backdrop-blur-sm pointer-events-auto cursor-pointer transition transform hover:scale-110">
+                  <PlayIcon className="w-12 h-12 text-white/90 translate-x-1" />
+                </div>
+             </div>
+           )}
+         </div>
+
+         {/* Episodes Section */}
+         <div className={`w-full bg-[var(--background)] flex flex-col z-10 overflow-visible pb-16 lg:pb-32 ${episodes.length === 0 ? 'hidden' : 'flex'}`}>
+            {episodes.length > 0 ? (
+               <>
+                 <div className="flex items-center justify-between p-4 md:px-8 border-b border-gray-200 dark:border-gray-800 shrink-0 bg-transparent">
+                    <div className="flex items-center">
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white mr-2">选集播放</h3>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">共 {episodes.length} 集</span>
+                  </div>
+                  {altSources.length > 0 && (
+                     <button onClick={() => setShowAltSources(!showAltSources)} className="text-[11px] font-bold text-white bg-gradient-to-r from-orange-400 to-red-500 px-2.5 py-1 rounded-full shadow-sm hover:opacity-90 transition flex items-center">
+                        {showAltSources ? '返回选集' : '测速换源'} <span className="bg-white/20 px-1.5 rounded-full ml-1 font-mono">{altSources.length}</span>
+                     </button>
+                  )}
+               </div>
+               <div 
+                 ref={episodesContainerRef}
+                 className="flex-1 w-full p-4 md:px-8 content-start"
+               >
+                  {showAltSources ? (
+                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                        {/* Current Source Marker */}
+                         <div className="p-3 rounded-2xl border-2 border-blue-500 bg-blue-50/50 dark:bg-blue-900/10 flex flex-col justify-center shadow-sm relative overflow-hidden transition-all duration-500">
+                           <div className="flex items-center justify-between w-full mb-1.5 relative z-10">
+                              <div className="flex items-center">
+                                 <span className="font-bold text-blue-600 dark:text-blue-400 mr-2">{video?._sourceName}</span>
+                                 <span className="text-[10px] font-medium bg-blue-500 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">当前源</span>
+                                 {bestSourceId === sourceId && (
+                                   <span className="ml-2 text-[10px] font-medium bg-orange-500 text-white px-1.5 py-0.5 rounded-full flex-shrink-0 shadow-sm animate-pulse">极速推荐</span>
+                                 )}
+                              </div>
+                              <span className={`text-[10px] flex-shrink-0 ml-2 px-1.5 py-0.5 rounded font-mono transition-colors ${!pingResults[sourceId!] ? 'bg-blue-100 text-blue-400 dark:bg-blue-900/30 dark:text-blue-600' : pingResults[sourceId!].ping === -1 ? 'bg-red-100 text-red-500 dark:bg-red-900/30' : pingResults[sourceId!].ping < 500 ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30' : 'bg-orange-100 text-orange-600 dark:bg-orange-900/30'}`}>
+                                 {!pingResults[sourceId!] ? '测速中...' : pingResults[sourceId!].ping === -1 ? '超时' : `${pingResults[sourceId!].ping}ms${pingResults[sourceId!].speed ? ` | ${formatSpeed(pingResults[sourceId!].speed)}` : ''}`}
+                              </span>
+                           </div>
+                           <span className="text-[11px] text-blue-400 dark:text-blue-500 truncate w-full relative z-10">{video?.vod_remarks || '进度未知'}</span>
+                         </div>
+                        {/* Alternative Sources */}
+                        {sortedAltSources.map((alt: any) => (
+                          <button 
+                             key={alt._sourceId}
+                             onClick={() => {
+                                setShowAltSources(false);
+                                router.replace(`/play?sourceId=${alt._sourceId}&id=${alt.vod_id}`);
+                             }}
+                             className={`w-full text-left p-3 rounded-2xl border bg-white dark:bg-[#1c1c1e] hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all flex flex-col items-start justify-center group relative overflow-hidden ${bestSourceId === alt._sourceId ? 'border-orange-300 dark:border-orange-500/50 shadow-md transform scale-[1.02]' : 'border-gray-100 dark:border-gray-800 hover:border-orange-500/50 hover:shadow-sm'}`}
+                          >
+                             <div className="flex items-center justify-between w-full mb-1.5 relative z-10">
+                                <div className="flex items-center">
+                                   <span className="font-bold text-gray-800 dark:text-gray-200 group-hover:text-orange-500 transition-colors truncate pr-2">{alt._sourceName}</span>
+                                   {bestSourceId === alt._sourceId && (
+                                      <span className="text-[10px] font-medium bg-orange-500 text-white px-1.5 py-0.5 rounded-full flex-shrink-0 shadow-sm animate-pulse">极速推荐</span>
+                                   )}
+                                </div>
+                                <span className={`text-[10px] flex-shrink-0 ml-2 px-1.5 py-0.5 rounded font-mono transition-colors ${!pingResults[alt._sourceId] ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500' : pingResults[alt._sourceId].ping === -1 ? 'bg-red-100 text-red-500 dark:bg-red-900/30' : pingResults[alt._sourceId].ping < 500 ? 'bg-green-100 text-green-600 dark:bg-green-900/30' : 'bg-orange-100 text-orange-600 dark:bg-orange-900/30'}`}>
+                                   {!pingResults[alt._sourceId] ? '测速中...' : pingResults[alt._sourceId].ping === -1 ? '超时' : `${pingResults[alt._sourceId].ping}ms${pingResults[alt._sourceId].speed ? ` | ${formatSpeed(pingResults[alt._sourceId].speed)}` : ''}`}
+                                </span>
+                             </div>
+                             <span className="text-[11px] text-gray-400 truncate w-full relative z-10">{alt.vod_remarks || '进度未知'}</span>
+                          </button>
+                        ))}
+                     </div>
+                  ) : (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-3">
+                    {episodes.map((ep, i) => {
+                       const isCurrent = ep.url === rawUrl || ep.name === epName
+                       return (
+                         <button
+                           key={i}
+                           ref={isCurrent ? activeEpRef : null}
+                           onClick={() => {
+                             router.replace(`/play?sourceId=${sourceId}&id=${id}&epName=${encodeURIComponent(ep.name)}&epUrl=${encodeURIComponent(ep.url)}`)
+                           }}
+                           className={`px-2 py-3 bg-white dark:bg-[#1c1c1e] text-[13px] font-medium rounded-xl shadow-sm transition truncate text-center cursor-pointer border w-full block ${isCurrent ? 'border-blue-500 text-blue-500 ring-1 ring-blue-500/50' : 'border-transparent text-gray-700 dark:text-gray-300 hover:border-blue-500 hover:text-blue-500 active:scale-95'}`}
+                           title={ep.name}
+                         >
+                           {ep.name}
+                         </button>
+                       )
+                    })}
+                  </div>
+                  )}
+               </div>
+               </>
+            ) : (
+               <div className="flex-1 flex flex-col items-center justify-center text-gray-400 space-y-3">
+                  <div className="w-6 h-6 border-2 border-gray-200 dark:border-gray-700 border-t-blue-500 rounded-full animate-spin"></div>
+                  <span className="text-xs font-medium">载入剧集...</span>
+               </div>
+            )}
+         </div>
+       </div>
+
+       {/* Info Modal */}
+       {showInfo && video && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm transition-opacity" onClick={() => setShowInfo(false)}>
+             <div className="bg-white dark:bg-[#1c1c1e] rounded-2xl p-5 w-full max-w-sm shadow-xl transform transition-transform" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                   <h3 className="text-lg font-bold text-gray-900 dark:text-white">影片属性</h3>
+                   <button onClick={() => setShowInfo(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1">
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                   </button>
+                </div>
+                <div className="space-y-4 text-[13px]">
+                   <div className="flex flex-col space-y-1">
+                      <span className="text-gray-500">影片名称</span>
+                      <span className="font-medium text-gray-900 dark:text-white">{video.vod_name}</span>
+                   </div>
+                   {video.vod_director && (
+                   <div className="flex flex-col space-y-1">
+                      <span className="text-gray-500">导演</span>
+                      <span className="text-gray-800 dark:text-gray-200 leading-relaxed">{video.vod_director}</span>
+                   </div>
+                   )}
+                   {video.vod_actor && (
+                   <div className="flex flex-col space-y-1">
+                      <span className="text-gray-500">主演</span>
+                      <span className="text-gray-800 dark:text-gray-200 leading-relaxed text-xs">{video.vod_actor}</span>
+                   </div>
+                   )}
+                   <div className="flex flex-col space-y-1">
+                      <span className="text-gray-500">地区/年份/分类</span>
+                      <span className="text-gray-800 dark:text-gray-200">{video.vod_area} / {video.vod_year} / {video.vod_class || video.type_name}</span>
+                   </div>
+                   <div className="flex flex-col space-y-1">
+                      <span className="text-gray-500">播放源站</span>
+                      <span className="font-medium text-blue-500 bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 rounded mr-auto">{video._sourceName} ({video._sourceId})</span>
+                   </div>
+                   <div className="flex flex-col space-y-1">
+                      <span className="text-gray-500">源直连地址</span>
+                      <div className="bg-gray-50 dark:bg-black/50 p-2 rounded-lg break-all text-[11px] text-gray-600 dark:text-gray-400 max-h-24 overflow-y-auto custom-scrollbar">
+                         {rawUrl || '无合法链接'}
+                      </div>
+                   </div>
+                   {video.vod_content && (
+                   <div className="flex flex-col space-y-1 pt-2 border-t border-gray-100 dark:border-gray-800/80">
+                      <span className="text-gray-500">剧情简介</span>
+                      <div className="text-gray-700 dark:text-gray-300 text-xs leading-relaxed max-h-32 overflow-y-auto custom-scrollbar" dangerouslySetInnerHTML={{__html: video.vod_content}}></div>
+                   </div>
+                   )}
+                </div>
+             </div>
+          </div>
+       )}
+
+
+    </div>
+  )
+}
+
+export default function PlayPage() {
+  return (
+    <Suspense fallback={
+       <div className="fixed inset-y-0 right-0 left-0 md:left-64 z-[60] bg-gray-50 dark:bg-gray-950 flex flex-col items-center justify-center text-gray-500 space-y-4">
+          <div className="w-8 h-8 border-2 border-gray-600 border-t-blue-500 rounded-full animate-spin"></div>
+          <span className="text-sm">引擎接入中...</span>
+       </div>
+    }>
+      <PlayerContent />
+    </Suspense>
+  )
+}

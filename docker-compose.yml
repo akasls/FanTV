@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  fantv:
+    image: ghcr.io/akasls/fantv:main # 替换为实际镜像版本
+    container_name: fantv
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./fantv.db:/app/fantv.db
+    environment:
+      - DATABASE_URL=file:./fantv.db

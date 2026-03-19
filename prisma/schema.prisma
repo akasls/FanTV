@@ -1,0 +1,76 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String     @id @default(cuid())
+  username       String     @unique
+  passwordHash   String
+  allowAdultMode Boolean    @default(false)
+  isActive       Boolean    @default(true)
+  role           String     @default("USER")
+  sourceOrder    String?    // JSON array storing source IDs to preserve personal overrides
+  historyData    String?    // Stringified JSON chunk of Zustand history states
+  favoriteData   String?    // Stringified JSON chunk of Zustand favorite states
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+
+  histories      History[]
+  favorites      Favorite[]
+}
+
+model Source {
+  id          String   @id @default(cuid())
+  name        String
+  apiUrl      String
+  mode        String   
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model History {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  videoId     String
+  videoName   String
+  videoPic    String?
+  mode        String   
+  progress    Int      @default(0)
+  lastWatched DateTime @default(now())
+  
+  @@index([userId, mode])
+}
+
+model Favorite {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  videoId     String
+  videoName   String
+  videoPic    String?
+  mode        String   
+  createdAt   DateTime @default(now())
+  
+  @@unique([userId, videoId, mode])
+  @@index([userId, mode])
+}
+
+model SystemSetting {
+  id                String   @id @default("global")
+  allowRegistration Boolean  @default(false)
+  allowGuestAccess  Boolean  @default(false)
+  siteName          String   @default("FanTv")
+  siteDescription   String   @default("A modern dual-mode video application.")
+  siteLogo          String   @default("")
+  updatedAt         DateTime @updatedAt
+}
