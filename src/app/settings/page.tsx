@@ -11,7 +11,6 @@ export default function SettingsPage() {
   const isAdmin = currentUser?.role === 'ADMIN'
   const [allowRegistration, setAllowRegistration] = useState(false)
   const [allowGuestAccess, setAllowGuestAccess] = useState(false)
-  const [syncing, setSyncing] = useState(false)
 
   useEffect(() => {
     if (isAdmin) {
@@ -46,49 +45,6 @@ export default function SettingsPage() {
     })
   }
 
-  const handleSyncData = async (e: React.MouseEvent<HTMLButtonElement>) => {
-     if (!currentUser) {
-        router.push('/login')
-        return
-     }
-     setSyncing(true)
-     const btn = e.currentTarget
-     const oldText = btn.innerText
-     btn.innerText = '同步中...'
-     try {
-       const { userDisabledSources } = useAppStore.getState();
-       const prefixedOrder = userSourceOrder.map(id => userDisabledSources.includes(id) ? '!' + id : id);
-
-       if (historyData.length === 0 && favoriteData.length === 0 && userSourceOrder.length === 0) {
-          const res = await fetch('/api/users/sync', {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify({ action: 'pull' })
-          })
-          const data = await res.json()
-          if (data.historyData) setHistoryData(data.historyData)
-          if (data.favoriteData) setFavoriteData(data.favoriteData)
-          if (data.sourceOrder) setUserSourceOrder(data.sourceOrder)
-       }
-       
-       await fetch('/api/users/sync', {
-         method: 'POST',
-         headers: { 'Content-Type': 'application/json' },
-         body: JSON.stringify({ action: 'upsert', historyData, favoriteData, sourceOrder: prefixedOrder })
-       })
-       
-       btn.innerText = '同步完成!'
-       btn.className = "whitespace-nowrap flex-shrink-0 text-sm font-medium text-white px-5 py-2 bg-gradient-to-r from-emerald-500 to-green-500 rounded-full transition-all shadow-md"
-       setTimeout(() => { 
-          btn.innerText = '立即同步'
-          btn.className = "whitespace-nowrap flex-shrink-0 text-sm font-medium text-white px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-500 hover:from-blue-500 hover:to-indigo-400 rounded-full transition-all shadow-md hover:shadow-lg"
-       }, 2500)
-     } catch (err) {
-       btn.innerText = '失败'
-       setTimeout(() => { btn.innerText = oldText }, 2000)
-     }
-     setSyncing(false)
-  }
 
   const handleLogout = async () => {
      await fetch('/api/auth/logout', { method: 'POST' })
@@ -271,22 +227,6 @@ export default function SettingsPage() {
         <h2 className="text-sm font-medium text-gray-500 ml-2 mb-2">历史记录与数据</h2>
         <div className="bg-white dark:bg-[#1c1c1e] rounded-3xl overflow-hidden shadow-sm border border-gray-100 dark:border-gray-800/80 divide-y divide-gray-100 dark:divide-gray-800/80">
           
-          {/* Cloud Sync Controller */}
-          <div className="flex items-center justify-between p-4 md:p-6 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors bg-gradient-to-r from-transparent to-blue-50/50 dark:to-blue-900/10">
-            <div>
-              <h3 className="font-bold flex items-center space-x-2">
-                <span className="text-transparent bg-clip-text bg-gradient-to-br from-indigo-500 to-purple-500">云端同步</span>
-              </h3>
-              <p className="text-sm text-gray-500 mt-0.5">备份并持久化合并当前设备的收藏夹和播放历史</p>
-            </div>
-            <button 
-              disabled={syncing}
-              onClick={handleSyncData}
-              className="whitespace-nowrap flex-shrink-0 text-sm font-medium text-white px-5 py-2 bg-gradient-to-r from-blue-600 to-indigo-500 hover:from-blue-500 hover:to-indigo-400 rounded-full transition-all shadow-md hover:shadow-lg disabled:opacity-50"
-            >
-              {currentUser ? '立即同步' : '登录并同步'}
-            </button>
-          </div>
 
           {/* Clear Favorites */}
           <div className="flex items-center justify-between p-4 md:p-6 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">

@@ -14,7 +14,9 @@ export async function POST(req: NextRequest) {
     const { action, historyData, favoriteData, sourceOrder } = body
 
     const user = await prisma.user.findUnique({ where: { id: userId } })
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+    if (!user || user.sessionId !== payload.sessionId) {
+       return NextResponse.json({ error: 'Unauthorized Session' }, { status: 401 })
+    }
 
     // [ACTION: WIPE]
     if (action === 'wipe_history') {

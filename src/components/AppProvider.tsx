@@ -20,11 +20,63 @@ export default function AppProvider({ children }: { children: React.ReactNode })
       if (!data?.user && data?.config && data.config.allowGuestAccess === false) {
          if (!isAuthPage) {
             router.replace('/login')
+            return // CRITICAL: Stop loading from finishing. Wait for the Next.js transition to /login
          }
       }
+      // AUTO-PULL ON LOGIN
+      if (data?.user) {
+         const { historyData, favoriteData, userSourceOrder, setHistoryData, setFavoriteData, setUserSourceOrder } = useAppStore.getState()
+         if (historyData.length === 0 && favoriteData.length === 0 && userSourceOrder.length === 0) {
+            fetch('/api/users/sync', {
+               method: 'POST',
+               headers: { 'Content-Type': 'application/json' },
+               body: JSON.stringify({ action: 'pull' })
+            }).then(res => res.json()).then(cloudData => {
+               if (cloudData.historyData) setHistoryData(cloudData.historyData)
+               if (cloudData.favoriteData) setFavoriteData(cloudData.favoriteData)
+               if (cloudData.sourceOrder) setUserSourceOrder(cloudData.sourceOrder)
+            }).catch(console.error)
+         }
+      }
+
       setLoading(false)
     })
   }, [fetchCurrentUser, isAuthPage, router])
+
+  // Zustand Subscribe for Auto-Push (Debounced 3s)
+  useEffect(() => {
+     let timeoutId: NodeJS.Timeout;
+     const unsub = useAppStore.subscribe((state, prevState) => {
+        if (!state.currentUser) return;
+        
+        const historyChanged = state.historyData !== prevState.historyData
+        const favoriteChanged = state.favoriteData !== prevState.favoriteData
+        const orderChanged = state.userSourceOrder !== prevState.userSourceOrder
+        
+        if (historyChanged || favoriteChanged || orderChanged) {
+           clearTimeout(timeoutId)
+           timeoutId = setTimeout(() => {
+              const prefixedOrder = state.userSourceOrder.map(id => state.userDisabledSources.includes(id) ? '!' + id : id);
+              fetch('/api/users/sync', {
+                 method: 'POST',
+                 headers: { 'Content-Type': 'application/json' },
+                 body: JSON.stringify({ 
+                    action: 'upsert', 
+                    historyData: state.historyData, 
+                    favoriteData: state.favoriteData, 
+                    sourceOrder: prefixedOrder 
+                 }),
+                 keepalive: true
+              }).catch(console.error)
+           }, 3000)
+        }
+     })
+     
+     return () => {
+        unsub()
+        clearTimeout(timeoutId)
+     }
+  }, [])
 
   if (loading) {
     return <div className="min-h-screen bg-gray-50 dark:bg-[#111111] transition-colors duration-300 flex items-center justify-center"></div>

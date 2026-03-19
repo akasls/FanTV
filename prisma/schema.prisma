@@ -14,6 +14,7 @@ model User {
   allowAdultMode Boolean    @default(false)
   isActive       Boolean    @default(true)
   role           String     @default("USER")
+  sessionId      String?    // Track single-device JWT
   sourceOrder    String?    // JSON array storing source IDs to preserve personal overrides
   historyData    String?    // Stringified JSON chunk of Zustand history states
   favoriteData   String?    // Stringified JSON chunk of Zustand favorite states

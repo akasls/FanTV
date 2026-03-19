@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import prisma from '@/lib/prisma'
 import { signToken } from '@/lib/auth'
 
@@ -28,7 +29,13 @@ export async function POST(req: NextRequest) {
        return NextResponse.json({ error: "该账号已被禁用" }, { status: 403 })
     }
 
-    const token = await signToken({ id: user.id, username: user.username, role: user.role })
+    const newSessionId = crypto.randomUUID()
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { sessionId: newSessionId }
+    })
+
+    const token = await signToken({ id: user.id, username: user.username, role: user.role, sessionId: newSessionId })
     
     const response = NextResponse.json({
        id: user.id,

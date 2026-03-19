@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     where: { id: payload.id as string }
   })
   
-  if (!user || !user.isActive) return NextResponse.json({ user: null, config: configPayload })
+  if (!user || !user.isActive || user.sessionId !== payload.sessionId) return NextResponse.json({ user: null, config: configPayload })
 
   return NextResponse.json({
     user: {

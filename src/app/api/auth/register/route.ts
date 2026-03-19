@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import crypto from 'crypto'
 import prisma from '@/lib/prisma'
 import { signToken } from '@/lib/auth'
 
@@ -16,16 +17,18 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.user.findUnique({ where: { username } })
     if (existing) return NextResponse.json({ error: "用户名已被占用" }, { status: 400 })
 
+    const newSessionId = crypto.randomUUID()
     const user = await prisma.user.create({
       data: {
         username,
         passwordHash: password,
         role: "USER",
-        allowAdultMode: false // Ensure public regs never get automatic adult capabilities
+        allowAdultMode: false,
+        sessionId: newSessionId
       }
     })
 
-    const token = await signToken({ id: user.id, username: user.username, role: user.role })
+    const token = await signToken({ id: user.id, username: user.username, role: user.role, sessionId: newSessionId })
     
     const response = NextResponse.json({
        id: user.id,

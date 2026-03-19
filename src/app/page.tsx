@@ -176,6 +176,7 @@ export default function Home() {
     if (!mounted) return
     
     const fetchVideos = async () => {
+      if (!selectedSourceId) return // Critical Guard: Prevent empty-source global aggregations on boot
       // Prevent refetch if we already have the list and categories cached
       if (page === 1 && feedRef.current.length > 0 && categories.length > 0 && !searchTerm && !selectedCategoryId && selectedSourceId === 'all') return
 
