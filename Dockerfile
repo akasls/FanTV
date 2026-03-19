@@ -1,8 +1,10 @@
-FROM node:18-alpine AS base
+FROM node:20-slim AS base
+
+# Install system dependencies (openssl for Prisma, curl for health checks)
+RUN apt-get update && apt-get install -y openssl curl && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies only when needed
 FROM base AS deps
-RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 
 # Install dependencies
@@ -13,39 +15,43 @@ RUN npm ci
 # Rebuild the source code only when needed
 FROM base AS builder
 WORKDIR /app
-RUN apk add --no-cache openssl
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Generate Prisma Client
 RUN npx prisma generate
 
-# Next.js telemetry
-ENV NEXT_TELEMETRY_DISABLED 1
+# Environment variables for build
+ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATABASE_URL="file:./dev.db"
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 
-# Build Next.js application by pre-populating dummy SQLite schemas so static generation queries do not crash natively
+# Pre-create DB schema so Next.js static generation doesn't crash
 RUN npx prisma db push
+
+# Build Next.js application
 RUN npm run build
 
-# Production image, copy all the files and run next
+# Production image
 FROM base AS runner
 WORKDIR /app
-RUN apk add --no-cache openssl
 
-ENV NODE_ENV production
-ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
 
-# Set up SQLite directory with proper permissions
-RUN mkdir -p /app/prisma
+# Create non-root user
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs nextjs
+
+# Set up directories
+RUN mkdir -p /app/prisma && chown nextjs:nodejs /app/prisma
 
 # Copy public folder
 COPY --from=builder /app/public ./public
 
-# Automatically leverage output traces to reduce image size
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+# Copy standalone build output
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # Copy Prisma schema and generated binaries
 COPY --from=builder /app/prisma ./prisma
@@ -55,7 +61,8 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/package.json ./package.json
 
 EXPOSE 3000
-ENV PORT 3000
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
 
-# Start server and run migrations beforehand safely
+# Run migrations then start
 CMD npx prisma db push && node server.js
