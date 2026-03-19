@@ -35,11 +35,12 @@ export async function POST(req: NextRequest) {
        sourceOrder: user.sourceOrder
     })
     
+    const isHttps = req.nextUrl.protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https'
     response.cookies.set({
       name: 'fantv_token',
       value: token,
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isHttps,
       sameSite: 'lax',
       path: '/',
       maxAge: 30 * 24 * 60 * 60
