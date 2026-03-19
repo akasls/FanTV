@@ -3,7 +3,6 @@ import { Inter } from 'next/font/google'
 import './globals.css'
 import AppProvider from '@/components/AppProvider'
 import PWAProvider from '@/components/PWAProvider'
-import prisma from '@/lib/prisma'
 
 const inter = Inter({ subsets: ['latin'] })
 
@@ -18,36 +17,21 @@ export const viewport: Viewport = {
   userScalable: false,
 }
 
-export async function generateMetadata(): Promise<Metadata> {
-  let siteName = 'FanTv';
-  let siteDescription = 'A modern dual-mode video application.';
-  let siteLogo = '';
-
-  try {
-     const setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } })
-     if (setting) {
-        siteName = setting.siteName || siteName;
-        siteDescription = setting.siteDescription || siteDescription;
-        siteLogo = setting.siteLogo || siteLogo;
-     }
-  } catch(e) {}
-  
-  return {
-    title: siteName,
-    description: siteDescription,
-    icons: { 
-       icon: siteLogo || '/logo.png', 
-       apple: '/icons/icon-192x192.png' 
-    },
-    appleWebApp: {
-      capable: true,
-      title: siteName,
-      statusBarStyle: 'black-translucent',
-    },
-    formatDetection: {
-      telephone: false,
-    },
-  }
+export const metadata: Metadata = {
+  title: 'FanTv',
+  description: 'A modern dual-mode video application.',
+  icons: { 
+     icon: '/logo.png', 
+     apple: '/icons/icon-192x192.png' 
+  },
+  appleWebApp: {
+    capable: true,
+    title: 'FanTv',
+    statusBarStyle: 'black-translucent',
+  },
+  formatDetection: {
+    telephone: false,
+  },
 }
 
 export default function RootLayout({

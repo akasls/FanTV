@@ -1,22 +1,10 @@
 import { MetadataRoute } from 'next'
-import prisma from '@/lib/prisma'
 
-export default async function manifest(): Promise<MetadataRoute.Manifest> {
-  let siteName = 'FanTv';
-  let siteDescription = 'A modern dual-mode video application.';
-
-  try {
-     const setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } })
-     if (setting) {
-        siteName = setting.siteName || siteName;
-        siteDescription = setting.siteDescription || siteDescription;
-     }
-  } catch(e) {}
-
+export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: siteName,
-    short_name: siteName,
-    description: siteDescription,
+    name: 'FanTv',
+    short_name: 'FanTv',
+    description: 'A modern dual-mode video application.',
     start_url: '/',
     display: 'standalone',
     background_color: '#1c1c1e',
