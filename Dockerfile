@@ -22,6 +22,7 @@ RUN npx prisma generate
 # Next.js telemetry
 ENV NEXT_TELEMETRY_DISABLED 1
 ENV DATABASE_URL="file:./dev.db"
+ENV NODE_OPTIONS="--max-old-space-size=4096"
 
 # Build Next.js application by pre-populating dummy SQLite schemas so static generation queries do not crash natively
 RUN npx prisma db push
