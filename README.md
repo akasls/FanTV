@@ -52,7 +52,6 @@ docker run -d \
   --restart unless-stopped \
   -p 3000:3000 \
   -v $(pwd)/fantv.db:/app/fantv.db \
-  -e DATABASE_URL=file:./fantv.db \
   ghcr.io/akasls/fantv:main
 ```
 
