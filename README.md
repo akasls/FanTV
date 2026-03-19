@@ -45,6 +45,28 @@ services:
 docker-compose up -d
 ```
 
+如果您不想使用 Docker Compose，也可以直接通过 `docker run` 命令部署：
+```bash
+docker run -d \
+  --name fantv \
+  --restart unless-stopped \
+  -p 3000:3000 \
+  -v $(pwd)/fantv.db:/app/fantv.db \
+  -e DATABASE_URL=file:./fantv.db \
+  ghcr.io/akasls/fantv:main
+```
+
+Windows PowerShell 用户请使用：
+```powershell
+docker run -d `
+  --name fantv `
+  --restart unless-stopped `
+  -p 3000:3000 `
+  -v "${PWD}/fantv.db:/app/fantv.db" `
+  -e DATABASE_URL=file:./fantv.db `
+  ghcr.io/akasls/fantv:main
+```
+
 > ⚠️ **初始管理员账号机制**：系统在首次热启动检测到全库不存在超管等级帐户时，将会自动为您极速硬编码部署超管账号：`admin`，密码 `admin123`。强烈建议您成功上线部署后立即前往“设置中心 - 用户管理”面板更新用户名及密码安全配置！
 
 ## 🙏 鸣谢与架构致敬
