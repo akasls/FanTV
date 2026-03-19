@@ -21,8 +21,10 @@ RUN npx prisma generate
 
 # Next.js telemetry
 ENV NEXT_TELEMETRY_DISABLED 1
+ENV DATABASE_URL="file:./dev.db"
 
-# Build Next.js application
+# Build Next.js application by pre-populating dummy SQLite schemas so static generation queries do not crash natively
+RUN npx prisma db push
 RUN npm run build
 
 # Production image, copy all the files and run next
