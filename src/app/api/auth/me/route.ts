@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 import { verifyToken } from '@/lib/auth'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(req: NextRequest) {
   let setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } })
   if (!setting) setting = await prisma.systemSetting.create({ data: { id: 'global', allowRegistration: true, allowGuestAccess: false, siteName: 'FanTv', siteDescription: 'A modern dual-mode video application.', siteLogo: '' } })

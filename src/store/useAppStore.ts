@@ -110,7 +110,7 @@ export const useAppStore = create<AppState>()(
       },
       fetchCurrentUser: async () => {
         try {
-          const res = await fetch('/api/auth/me')
+          const res = await fetch('/api/auth/me', { cache: 'no-store' })
           const data = await res.json()
           set({ currentUser: data.user || null })
           if (data.config) {
