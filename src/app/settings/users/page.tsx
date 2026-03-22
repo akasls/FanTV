@@ -149,7 +149,7 @@ export default function UsersManager() {
       </div>
 
       {showAdd && (
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-[#1c1c1e] p-4 rounded-2xl border border-gray-200 dark:border-gray-800 space-y-4 shadow-sm">
+        <form onSubmit={handleSubmit} className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 space-y-4 shadow-sm">
           <div>
             <label className="block text-xs text-gray-500 mb-1">登录账号</label>
             <input 
@@ -227,7 +227,7 @@ export default function UsersManager() {
              if (filterUser === 'USER') return u.role === 'USER' && !u.allowAdultMode
              return true
           }).map(u => (
-            <li key={u.id} className={`bg-white dark:bg-[#1c1c1e] p-4 rounded-2xl shadow-sm border ${u.isActive ? 'border-gray-100 dark:border-gray-800/80' : 'border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-900/50'} flex justify-between items-center group transition hover:-translate-y-0.5 hover:shadow-md`}>
+            <li key={u.id} className={`bg-white dark:bg-white/5 p-4 rounded-2xl shadow-sm border ${u.isActive ? 'border-gray-100 dark:border-gray-800/80' : 'border-red-200 bg-red-50 dark:bg-red-500/10 dark:border-red-900/50'} flex justify-between items-center group transition hover:-translate-y-0.5 hover:shadow-md`}>
               <div className="flex flex-col mr-4">
                 <span className="font-medium text-gray-900 dark:text-gray-100 flex items-center space-x-2">
                   <span>{u.username}</span>

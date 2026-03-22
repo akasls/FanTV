@@ -4,12 +4,28 @@ import { persist } from 'zustand/middleware'
 export type AppMode = 'General' | 'Adult'
 export type ThemeMode = 'light' | 'dark' | 'system'
 
+export interface SiteConfig {
+  allowRegistration?: boolean
+  allowGuestAccess?: boolean
+  siteName?: string
+  siteDescription?: string
+  siteLogo?: string
+  doubanDataProxy?: string
+  doubanImageProxy?: string
+  speedTestPlayback?: boolean
+  shortDramaApiUrl?: string | null
+  shortDramaCategories?: string | null;
+}
+
 export interface User {
   id: string;
   username: string;
   role: string;
   allowAdultMode: boolean;
   sourceOrder: string | null;
+  doubanDataProxy?: string | null;
+  doubanImageProxy?: string | null;
+  speedTestPlayback?: boolean | null;
 }
 
 export interface VideoItem {
@@ -22,7 +38,13 @@ export interface VideoItem {
   epUrl?: string
   currentTime?: number
   duration?: number
-  [key: string]: any // allow MacCMS native keys like vod_id, vod_name
+  [key: string]: any
+}
+
+export interface SearchHistoryItem {
+  term: string
+  mode: string
+  timestamp: number
 }
 
 interface AppState {
@@ -34,12 +56,22 @@ interface AppState {
   enableAdBlock: boolean
   theme: ThemeMode
 
+  // User-Overridable Global Configs
+  isFilterExpanded: boolean;
+  setIsFilterExpanded: (expanded: boolean) => void;
+  speedTestPlayback: boolean;
+  setSpeedTestPlayback: (enabled: boolean) => void;
+  doubanDataProxy: string;
+  setDoubanDataProxy: (proxy: string) => void;
+  doubanImageProxy: string;
+  setDoubanImageProxy: (proxy: string) => void;
+
   currentUser: User | null
   setCurrentUser: (user: User | null) => void
   fetchCurrentUser: () => Promise<{ user: any, config: any }>
 
-  siteConfig: any
-  setSiteConfig: (config: any) => void
+  siteConfig: SiteConfig | null
+  setSiteConfig: (config: SiteConfig | null) => void
   
   userSourceOrder: string[]
   setUserSourceOrder: (order: string[]) => void
@@ -52,10 +84,35 @@ interface AppState {
   inputTerm: string
   selectedCategoryId: string
   drillDownSourceId: string | null
+  drillDownCustomApiUrl: string | null
+  drillDownCategoryId: string | null
+
+  activeStaticChannel: string;
+  setActiveStaticChannel: (channel: string) => void;
+  activeStaticSubCat: string;
+  setActiveStaticSubCat: (subcat: string) => void;
+  doubanTag: string;
+  setDoubanTag: (tag: string) => void;
+  doubanSubcat: string;
+  setDoubanSubcat: (subcat: string) => void;
+  doubanGenre: string;
+  setDoubanGenre: (genre: string) => void;
+  doubanCountry: string;
+  setDoubanCountry: (country: string) => void;
+  doubanYear: string;
+  setDoubanYear: (year: string) => void;
+  doubanSort: string;
+  setDoubanSort: (sort: string) => void;
+  targetSearchSource: string;
+  setTargetSearchSource: (source: string) => void;
+
+  setDrillDownCustomApiUrl: (url: string | null) => void
+  setDrillDownCategoryId: (id: string | null) => void
 
   historyData: VideoItem[]
   favoriteData: VideoItem[]
   homeFeedList: VideoItem[]
+  searchHistory: SearchHistoryItem[]
 
   setAllowAdultMode: (allow: boolean) => void
   setSearchAllSources: (all: boolean) => void
@@ -75,6 +132,8 @@ interface AppState {
   updateHistoryRecord: (videoId: string, sourceId: string, epName: string, epUrl: string, currentTime: number, duration: number) => void
   setFavoriteData: (data: VideoItem[]) => void
   setHomeFeedList: (data: VideoItem[]) => void
+  addSearchHistory: (term: string, mode: string) => void
+  clearSearchHistory: (mode: string) => void
   
   clearCache: () => void
 }
@@ -89,7 +148,16 @@ export const useAppStore = create<AppState>()(
       enableShortcuts: true,
       enableAdBlock: true,
       theme: 'system',
+      isFilterExpanded: true,
+      setIsFilterExpanded: (v) => set({ isFilterExpanded: v }),
       
+      speedTestPlayback: true,
+      setSpeedTestPlayback: (v) => set({ speedTestPlayback: v }),
+      doubanDataProxy: '',
+      setDoubanDataProxy: (v) => set({ doubanDataProxy: v }),
+      doubanImageProxy: '',
+      setDoubanImageProxy: (v) => set({ doubanImageProxy: v }),
+
       siteConfig: null,
       setSiteConfig: (config) => set({ siteConfig: config }),
 
@@ -98,6 +166,18 @@ export const useAppStore = create<AppState>()(
         set({ currentUser: user })
         if (user) {
            set({ allowAdultMode: user.allowAdultMode })
+           
+           // Apply user-level preferred settings
+           if (user.speedTestPlayback !== null && user.speedTestPlayback !== undefined) {
+             set({ speedTestPlayback: user.speedTestPlayback });
+           }
+           if (user.doubanDataProxy !== null && user.doubanDataProxy !== undefined) {
+             set({ doubanDataProxy: user.doubanDataProxy });
+           }
+           if (user.doubanImageProxy !== null && user.doubanImageProxy !== undefined) {
+             set({ doubanImageProxy: user.doubanImageProxy });
+           }
+
            if (user.sourceOrder) {
              try { 
                const parsed = JSON.parse(user.sourceOrder) as string[]
@@ -117,11 +197,35 @@ export const useAppStore = create<AppState>()(
              set({ siteConfig: {
                  siteName: data.config.siteName,
                  siteDescription: data.config.siteDescription,
-                 siteLogo: data.config.siteLogo
+                 siteLogo: data.config.siteLogo,
+                 speedTestPlayback: data.config.speedTestPlayback,
+                 shortDramaApiUrl: data.config.shortDramaApiUrl,
+                 shortDramaCategories: data.config.shortDramaCategories
              }})
+             
+             // Baseline fallback configurations
+             if (!data.user || data.user.speedTestPlayback === null) {
+                set({ speedTestPlayback: data.config.speedTestPlayback ?? true });
+             }
+             if (!data.user || data.user.doubanDataProxy === null) {
+                set({ doubanDataProxy: data.config.doubanDataProxy || '' });
+             }
+             if (!data.user || data.user.doubanImageProxy === null) {
+                set({ doubanImageProxy: data.config.doubanImageProxy || '' });
+             }
           }
           if (data.user) {
              set({ allowAdultMode: data.user.allowAdultMode })
+             
+             if (data.user.speedTestPlayback !== null && data.user.speedTestPlayback !== undefined) {
+               set({ speedTestPlayback: data.user.speedTestPlayback });
+             }
+             if (data.user.doubanDataProxy !== null && data.user.doubanDataProxy !== undefined) {
+               set({ doubanDataProxy: data.user.doubanDataProxy });
+             }
+             if (data.user.doubanImageProxy !== null && data.user.doubanImageProxy !== undefined) {
+               set({ doubanImageProxy: data.user.doubanImageProxy });
+             }
              if (data.user.sourceOrder) {
                try { 
                  const parsed = JSON.parse(data.user.sourceOrder) as string[]
@@ -153,6 +257,31 @@ export const useAppStore = create<AppState>()(
       historyData: [],
       favoriteData: [],
       homeFeedList: [],
+      searchHistory: [],
+      drillDownCustomApiUrl: null,
+      drillDownCategoryId: null,
+      
+      activeStaticChannel: "movie",
+      setActiveStaticChannel: (c) => set({ activeStaticChannel: c }),
+      activeStaticSubCat: "全部",
+      setActiveStaticSubCat: (s) => set({ activeStaticSubCat: s }),
+      doubanTag: "电影",
+      setDoubanTag: (t) => set({ doubanTag: t }),
+      doubanSubcat: "全部",
+      setDoubanSubcat: (s) => set({ doubanSubcat: s }),
+      doubanGenre: "",
+      setDoubanGenre: (g) => set({ doubanGenre: g }),
+      doubanCountry: "",
+      setDoubanCountry: (c) => set({ doubanCountry: c }),
+      doubanYear: "",
+      setDoubanYear: (y) => set({ doubanYear: y }),
+      doubanSort: "U",
+      setDoubanSort: (s) => set({ doubanSort: s }),
+      targetSearchSource: "all",
+      setTargetSearchSource: (s) => set({ targetSearchSource: s }),
+      
+      setDrillDownCustomApiUrl: (url) => set({ drillDownCustomApiUrl: url }),
+      setDrillDownCategoryId: (id) => set({ drillDownCategoryId: id }),
 
       setAllowAdultMode: (allow) => set({ allowAdultMode: allow }),
       setSearchAllSources: (all) => set({ searchAllSources: all }),
@@ -215,21 +344,42 @@ export const useAppStore = create<AppState>()(
       },
       setFavoriteData: (data) => set({ favoriteData: data }),
       setHomeFeedList: (data) => set({ homeFeedList: data }),
-      clearCache: () => set({ historyData: [], favoriteData: [], homeFeedList: [] })
+      addSearchHistory: (term, mode) => set(state => {
+         const filtered = state.searchHistory.filter(h => !(h.term === term && h.mode === mode))
+         filtered.unshift({ term, mode, timestamp: Date.now() })
+         return { searchHistory: filtered.slice(0, 50) } // keep last 50
+      }),
+      clearSearchHistory: (mode) => set(state => ({
+         searchHistory: state.searchHistory.filter(h => h.mode !== mode)
+      })),
+      clearCache: () => set({ historyData: [], favoriteData: [], homeFeedList: [], searchHistory: [] })
     }),
     {
       name: 'fantv-storage',
       partialize: (state) => ({
         currentMode: state.currentMode,
-        searchAllSources: state.searchAllSources,
         allowAdultMode: state.allowAdultMode,
         selectedSourceGlobal: state.selectedSourceGlobal,
         enableShortcuts: state.enableShortcuts,
         enableAdBlock: state.enableAdBlock,
         theme: state.theme,
+        speedTestPlayback: state.speedTestPlayback,
+        doubanDataProxy: state.doubanDataProxy,
+        doubanImageProxy: state.doubanImageProxy,
         historyData: state.historyData,
         favoriteData: state.favoriteData,
-        userSourceOrder: state.userSourceOrder
+        searchHistory: state.searchHistory,
+        userSourceOrder: state.userSourceOrder,
+        userDisabledSources: state.userDisabledSources,
+        activeStaticChannel: state.activeStaticChannel,
+        activeStaticSubCat: state.activeStaticSubCat,
+        doubanTag: state.doubanTag,
+        doubanSubcat: state.doubanSubcat,
+        doubanGenre: state.doubanGenre,
+        doubanCountry: state.doubanCountry,
+        doubanYear: state.doubanYear,
+        doubanSort: state.doubanSort,
+        targetSearchSource: state.targetSearchSource
       }),
     }
   )

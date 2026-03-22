@@ -1,4 +1,5 @@
 'use client'
+import DOMPurify from 'isomorphic-dompurify';
 import { useEffect, useRef, Suspense, useState, useCallback, useMemo } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { 
@@ -15,6 +16,37 @@ import {
 } from '@heroicons/react/24/outline'
 import { HeartIcon as HeartSolid } from '@heroicons/react/24/solid'
 import { useAppStore } from '@/store/useAppStore'
+import { SiteConfig } from '@/store/useAppStore'
+
+export function getBestM3u8List(vodPlayFrom?: string, vodPlayUrl?: string): string | null {
+  if (!vodPlayUrl) return null;
+  
+  const froms = vodPlayFrom ? vodPlayFrom.split("$$$") : [];
+  const urls = vodPlayUrl.split("$$$");
+  
+  // Prioritize sources explicitly marked as m3u8
+  for (let i = 0; i < froms.length; i++) {
+    if (froms[i].toLowerCase().includes("m3u8")) {
+      if (urls[i] && urls[i].includes(".m3u8")) return urls[i];
+      if (urls[i]) return urls[i]; // Trust explicit source naming even if unstructured URL
+    }
+  }
+
+  // Fallback to the first URL that implies m3u8 via extensions
+  for (let i = 0; i < urls.length; i++) {
+    if (urls[i] && urls[i].includes(".m3u8")) {
+      return urls[i];
+    }
+  }
+
+  // Ultimate Fallback: Just return the first available playlist layer (e.g. mp4 arrays)
+  if (urls.length > 0 && urls[0].trim() !== "") {
+     return urls[0];
+  }
+
+  // If literally empty, return null
+  return null;
+}
 
 function formatTime(time: number) {
   if (isNaN(time) || !isFinite(time)) return '00:00'
@@ -32,7 +64,7 @@ function PlayerContent() {
   const sourceId = searchParams.get('sourceId')
   const id = searchParams.get('id')
   
-  const { currentMode, favoriteData, setFavoriteData, enableShortcuts } = useAppStore()
+  const { currentMode, favoriteData, setFavoriteData } = useAppStore()
   
   const playerContainerRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -41,9 +73,33 @@ function PlayerContent() {
   const [video, setVideo] = useState<any>(null)
   const [episodes, setEpisodes] = useState<{name: string, url: string}[]>([])
   const [showInfo, setShowInfo] = useState(false)
+  const [speedTestError, setSpeedTestError] = useState<string | null>(null)
   
   const [altSources, setAltSources] = useState<any[]>([])
   const [showAltSources, setShowAltSources] = useState(false)
+  const [showSkipConfig, setShowSkipConfig] = useState(false)
+  
+  const [introSkip, setIntroSkip] = useState(0)
+  const [outroSkip, setOutroSkip] = useState(0)
+  const hasSkippedIntro = useRef(false)
+  const hasSkippedOutro = useRef(false)
+
+  useEffect(() => {
+     try {
+       const saved = localStorage.getItem('global_skip_config')
+       if (saved) {
+          const s = JSON.parse(saved)
+          setIntroSkip(s.intro || 0)
+          setOutroSkip(s.outro || 0)
+       }
+     } catch (e) {}
+  }, [])
+
+  useEffect(() => {
+     hasSkippedIntro.current = false
+     hasSkippedOutro.current = false
+  }, [rawUrl])
+
   const [pingResults, setPingResults] = useState<Record<string, {ping: number, speed: number | null}>>({})
   const pingedRefs = useRef<Set<string>>(new Set())
 
@@ -67,8 +123,11 @@ function PlayerContent() {
            try {
              let urlToTest = '';
              if (alt.vod_play_url) {
-                const firstEp = alt.vod_play_url.split('$$$')[0].split('#')[0].split('$');
-                if (firstEp[1]) urlToTest = firstEp[1];
+                const playListSync = getBestM3u8List(alt.vod_play_from, alt.vod_play_url);
+                if (playListSync) {
+                   const firstEp = playListSync.split('#')[0].split('$');
+                   if (firstEp[1]) urlToTest = firstEp[1];
+                }
              } else if (alt.vod_pic) {
                 urlToTest = alt.vod_pic;
              }
@@ -242,25 +301,67 @@ function PlayerContent() {
                   }, ...historyData])
               }
 
-              if(data.video.vod_play_url) {
-                const players = data.video.vod_play_url.split('$$$')
-                if(players.length > 0) {
-                  const eps = players[0].split('#').map((ep: string) => {
-                     const parts = ep.split('$')
-                     return { name: parts[0] || 'Unknown', url: parts[1] || ep }
-                  }).filter((e: any) => e.url)
-                  setEpisodes(eps)
+              if(data.video.vod_play_url && searchParams.get('speedtest') !== 'true') {
+                const playListStr = getBestM3u8List(data.video.vod_play_from, data.video.vod_play_url)
+                if(!playListStr) {
+                   const store = useAppStore.getState();
+                   const newDisabled = new Set(store.userDisabledSources || []);
+                   if (sourceId) newDisabled.add(sourceId as string);
+                   store.setUserDisabledSources(Array.from(newDisabled));
+                   
+                   fetch('/api/sources', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: sourceId, name: data.video._sourceName + " (无法提取m3u8地址)", isActive: false })
+                   });
+                   setSpeedTestError("抱歉，该源站未提供合法的 M3U8 格式直连或者提取失败，已被自动封禁。请返回重试或选择其他源站。");
+                   return;
+                }
+
+                const eps = playListStr.split('#').map((ep: string) => {
+                   const parts = ep.split('$')
+                   return { name: parts[0] || 'Unknown', url: parts[1] || ep }
+                }).filter((e: any) => e.url)
                   
-                  if (!rawUrl && eps.length > 0) {
+                  if (eps.length > 0) {
                      const hist = useAppStore.getState().historyData.find(v => String(v.videoId) === String(id) && String(v._sourceId) === String(sourceId))
                      let targetEp = eps[0]
                      if (hist && hist.epUrl) {
                        const match = eps.find((e: {name: string, url: string}) => e.url === hist.epUrl)
                        if (match) targetEp = match
                      }
-                     router.replace(`/play?sourceId=${sourceId}&id=${id}&epName=${encodeURIComponent(targetEp.name)}&epUrl=${encodeURIComponent(targetEp.url)}`)
+
+                     // This check is now redundant if getBestM3u8List already filters for .m3u8
+                     // However, if the playlist string itself contains non-.m3u8 URLs after being parsed,
+                     // we might still need a check here. For now, assuming getBestM3u8List ensures the primary URL is m3u8.
+                     // If targetEp.url is not m3u8, it means getBestM3u8List failed to find a proper m3u8,
+                     // or the playlist itself is malformed.
+                     if (!targetEp.url.includes(".m3u8")) {
+                        const store = useAppStore.getState();
+                        const newDisabled = new Set(store.userDisabledSources || []);
+                        if (sourceId) newDisabled.add(sourceId as string);
+                        store.setUserDisabledSources(Array.from(newDisabled));
+                        
+                        fetch('/api/sources', {
+                           method: 'PUT',
+                           headers: { 'Content-Type': 'application/json' },
+                           body: JSON.stringify({ 
+                              id: sourceId, 
+                              name: (data.video._sourceName || "当前源").replace(" (无法提取m3u8地址)", "") + " (无法提取m3u8地址)", 
+                              isActive: false 
+                           })
+                        }).catch(() => {});
+                        setSpeedTestError(`禁止播放：该源站点提供的是非法非 m3u8 网页链接，安全系统已将其标记为不可用并永久封禁。`);
+                        return;
+                     }
+
+                     setEpisodes(eps)
+                     if (!rawUrl) {
+                        router.replace(`/play?sourceId=${sourceId}&id=${id}&epName=${encodeURIComponent(targetEp.name)}&epUrl=${encodeURIComponent(targetEp.url)}`)
+                     }
+                  } else {
+                     setEpisodes([])
                   }
-                }
               }
               
               if (data.video.vod_name) {
@@ -268,8 +369,46 @@ function PlayerContent() {
                  .then(r => r.json())
                  .then(searchData => {
                     if (searchData.list) {
-                       const alt = searchData.list.filter((v: any) => v._sourceId !== sourceId && v.vod_name === data.video.vod_name)
-                       setAltSources(alt)
+                       const disabledIds = useAppStore.getState().userDisabledSources || [];
+                       const rawAlts = searchData.list.filter((v: any) => v._sourceId !== sourceId && v.vod_name === data.video.vod_name && !disabledIds.includes(v._sourceId));
+                       const uniqueAlts: any[] = [];
+                       const seenSourceIds = new Set<string>();
+                       const store = useAppStore.getState();
+                       const newDisabled = new Set(store.userDisabledSources || []);
+
+                       for (const r of rawAlts) {
+                          if (!seenSourceIds.has(r._sourceId)) {
+                             seenSourceIds.add(r._sourceId);
+                             
+                             let urlToTest = "";
+                             if (r.vod_play_url) {
+                               const playSync = getBestM3u8List(r.vod_play_from, r.vod_play_url);
+                               if (playSync) {
+                                  const firstEp = playSync.split("#")[0].split("$");
+                                  if (firstEp[1]) urlToTest = firstEp[1];
+                               }
+                             } else if (r.vod_pic) {
+                               urlToTest = r.vod_pic;
+                             }
+
+                             if (urlToTest && !urlToTest.includes(".m3u8")) {
+                                fetch('/api/sources', {
+                                   method: 'PUT',
+                                   headers: { 'Content-Type': 'application/json' },
+                                   body: JSON.stringify({ 
+                                      id: r._sourceId, 
+                                      name: (r._sourceName || "").replace(" (无法提取m3u8地址)", "") + " (无法提取m3u8地址)", 
+                                      isActive: false 
+                                   })
+                                }).catch(() => {});
+                                newDisabled.add(r._sourceId);
+                             } else {
+                                uniqueAlts.push(r);
+                             }
+                          }
+                       }
+                       store.setUserDisabledSources(Array.from(newDisabled));
+                       setAltSources(uniqueAlts);
                     }
                  }).catch(console.error)
               }
@@ -279,9 +418,11 @@ function PlayerContent() {
     }
   }, [sourceId, id])
   
+  // Video Playback Effect
   useEffect(() => {
-    if (!rawUrl || !videoRef.current) return
-    let hls: any
+    let hls: any = null
+    if (!rawUrl) return
+
     import('hls.js').then((Hls) => {
       if (Hls.default.isSupported()) {
         
@@ -372,7 +513,7 @@ function PlayerContent() {
                setTimeout(() => { if (videoRef.current) videoRef.current.currentTime = startPos }, 100)
            }
            const p = videoRef.current?.play()
-           if (p !== undefined) p.catch((e: any) => { if (e.name !== 'AbortError') console.log('Autoplay blocked:', e) })
+           if (p !== undefined) p.catch((e: any) => { /* ignore */ })
         })
       } 
       else if (videoRef.current!.canPlayType('application/vnd.apple.mpegurl')) {
@@ -388,7 +529,7 @@ function PlayerContent() {
         videoRef.current!.addEventListener('loadedmetadata', () => {
            if (startPos > 0) videoRef.current!.currentTime = startPos
            const p = videoRef.current?.play()
-           if (p !== undefined) p.catch((e: any) => { if (e.name !== 'AbortError') console.log('Autoplay blocked:', e) })
+           if (p !== undefined) p.catch((e: any) => { /* ignore */ })
         }, { once: true })
       }
     }).catch(err => {
@@ -430,8 +571,7 @@ function PlayerContent() {
   // Keyboard controls
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      const { enableShortcuts } = useAppStore.getState()
-      if (!enableShortcuts || !videoRef.current) return
+      if (!videoRef.current) return
       
       const isInput = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA'
       if (isInput) return
@@ -524,24 +664,33 @@ function PlayerContent() {
   // Fullscreen handlers
   useEffect(() => {
     const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement)
+      const isFull = !!document.fullscreenElement
+      setIsFullscreen(isFull)
+      if (!isFull) {
+         if (window.screen && window.screen.orientation && (window.screen.orientation as any).unlock) {
+            (window.screen.orientation as any).unlock()
+         }
+      }
     }
     document.addEventListener('fullscreenchange', handleFullscreenChange)
     return () => document.removeEventListener('fullscreenchange', handleFullscreenChange)
   }, [])
 
-  const toggleFullscreen = (e: React.MouseEvent) => {
-    e.stopPropagation()
+  const toggleFullscreen = async (e?: React.MouseEvent) => {
+    e?.stopPropagation()
     const container = playerContainerRef.current
     if (!container) return
     
     if (!document.fullscreenElement) {
       if (container.requestFullscreen) {
-         container.requestFullscreen().catch(err => console.error("Fullscreen err:", err))
+         await container.requestFullscreen().catch((err: any) => console.error("Fullscreen err:", err))
       } else if ((container as any).webkitRequestFullscreen) {
          (container as any).webkitRequestFullscreen()
       } else if ((container as any).msRequestFullscreen) {
          (container as any).msRequestFullscreen()
+      }
+      if (window.screen && window.screen.orientation && (window.screen.orientation as any).lock) {
+         (window.screen.orientation as any).lock('landscape').catch((err: any) => console.warn(err))
       }
     } else {
       if (document.exitFullscreen) {
@@ -575,8 +724,7 @@ function PlayerContent() {
 
   // Touch Gesture Handlers
   const handleTouchStart = (e: React.TouchEvent) => {
-    const { enableShortcuts } = useAppStore.getState()
-    if (!enableShortcuts || e.touches.length !== 1) return
+    if (e.touches.length !== 1) return
     const touch = e.touches[0]
     touchStartRef.current = {
        x: touch.clientX,
@@ -590,8 +738,7 @@ function PlayerContent() {
   }
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    const { enableShortcuts } = useAppStore.getState()
-    if (!enableShortcuts || !touchStartRef.current || !videoRef.current) return
+    if (!touchStartRef.current || !videoRef.current) return
     
     const touch = e.touches[0]
     const deltaX = touch.clientX - touchStartRef.current.x
@@ -660,19 +807,379 @@ function PlayerContent() {
      }
   }, [rawUrl, duration, isMetadataLoaded])
 
+  const isSpeedTestQuery = searchParams.get('speedtest') === 'true';
+  const searchName = searchParams.get('searchName');
+  const targetName = searchName || video?.vod_name;
+
   const isVideoReady = duration > 0 || isMetadataLoaded;
-  const showLoadingOverlay = !isLoaderForcedOff && (!video || (!rawUrl && episodes.length > 0) || !isVideoReady)
+  const showLoadingOverlay = !speedTestError && !isLoaderForcedOff && (isSpeedTestQuery || (!searchName && !video) || (!rawUrl && episodes.length > 0) || !isVideoReady)
+
+  useEffect(() => {
+    if (!isSpeedTestQuery || !targetName) return;
+
+    if (pingedRefs.current.has('auto-speedtest')) return;
+    pingedRefs.current.add('auto-speedtest');
+
+    (async () => {
+      try {
+        const fetchUrl = useAppStore.getState().speedTestPlayback === false 
+           ? `/api/videos?wd=${encodeURIComponent(targetName)}&mode=${currentMode}&searchAll=true&sortBySourceOrder=true`
+           : `/api/videos?wd=${encodeURIComponent(targetName)}&mode=${currentMode}&searchAll=true`;
+
+        const res = await fetch(fetchUrl);
+        const data = await res.json();
+        
+        let targetAltSources: any[] = [];
+        if (data && Array.isArray(data.list)) {
+          // Eradicate already disabled sources beforehand
+          const disabledIds = useAppStore.getState().userDisabledSources || [];
+          const activeList = data.list.filter((v: any) => !disabledIds.includes(v._sourceId));
+
+          // Enforce strict literal video identification metadata first
+          let exactMatches = activeList.filter((v: any) => v.vod_name === targetName);
+          if (exactMatches.length === 0) {
+             exactMatches = activeList.filter((v: any) => v.vod_name.replace(/\s+/g,'').toLowerCase() === targetName.replace(/\s+/g,'').toLowerCase());
+          }
+          if (exactMatches.length > 0) {
+              targetAltSources = exactMatches;
+          } else {
+              targetAltSources = activeList.filter((v: any) => 
+                 v.vod_name.includes(targetName) || targetName.includes(v.vod_name)
+              );
+          }
+          // If no loose match but we have results, fallback to top 10 results from search
+          if (targetAltSources.length === 0 && activeList.length > 0) {
+             targetAltSources = activeList.slice(0, 10);
+          }
+        }
+
+        if (targetAltSources.length === 0) {
+           if (searchName) {
+              setSpeedTestError("暂未在可用源站中匹配到该影片或均被拦截，请尝试添加更多高清源站。");
+           } else {
+              router.replace(`/play?id=${id}&sourceId=${encodeURIComponent(sourceId || '')}`);
+           }
+           return;
+        }
+
+        if (useAppStore.getState().speedTestPlayback === false) {
+             const store = useAppStore.getState();
+             const newDisabled = new Set(store.userDisabledSources || []);
+             let firstValidAlt: any = null;
+             
+             for (const alt of targetAltSources) {
+                let urlToTest = "";
+                if (alt.vod_play_url) {
+                  const playSync = getBestM3u8List(alt.vod_play_from, alt.vod_play_url);
+                  if (playSync) {
+                     const firstEp = playSync.split("#")[0].split("$");
+                     if (firstEp[1]) urlToTest = firstEp[1];
+                  }
+                } else if (alt.vod_pic) {
+                  urlToTest = alt.vod_pic;
+                }
+
+                if (!urlToTest) {
+                   // If getBestM3u8List returns null, it means no valid m3u8 was found.
+                   // Mark as disabled.
+                   fetch('/api/sources', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ 
+                         id: alt._sourceId, 
+                         name: (alt._sourceName || "").replace(" (无法提取m3u8地址)", "") + " (无法提取m3u8地址)", 
+                         isActive: false 
+                      })
+                   }).catch(() => {});
+                   newDisabled.add(alt._sourceId);
+                   continue;
+                }
+                
+                firstValidAlt = alt;
+                break;
+             }
+
+             if (newDisabled.size > (store.userDisabledSources?.length || 0)) {
+                 store.setUserDisabledSources(Array.from(newDisabled));
+             }
+
+             if (firstValidAlt) {
+                 const uniqueAlts: any[] = [];
+                 const seenSourceIds = new Set<string>();
+                 for (const r of targetAltSources) {
+                    if (!seenSourceIds.has(r._sourceId) && !newDisabled.has(r._sourceId)) {
+                       seenSourceIds.add(r._sourceId);
+                       uniqueAlts.push(r);
+                    }
+                 }
+                 setAltSources(uniqueAlts);
+                 setSpeedTestError(""); 
+                 router.replace(`/play?id=${firstValidAlt.vod_id || firstValidAlt.videoId || firstValidAlt.id}&sourceId=${encodeURIComponent(firstValidAlt._sourceId)}`);
+             } else {
+                 setAltSources([]);
+                 setSpeedTestError("暂无有效视频直连，发现的源均已被安全系统拦截屏蔽。");
+             }
+             return;
+        }
+
+        const results = await Promise.all(
+          targetAltSources.map(async (alt: any) => {
+            try {
+              let urlToTest = "";
+              if (alt.vod_play_url) {
+                const playSync = getBestM3u8List(alt.vod_play_from, alt.vod_play_url);
+                if (playSync) {
+                   const firstEp = playSync.split("#")[0].split("$");
+                   if (firstEp[1]) urlToTest = firstEp[1];
+                }
+              } else if (alt.vod_pic) {
+                urlToTest = alt.vod_pic;
+              }
+
+              if (!urlToTest) {
+                 // If getBestM3u8List returns null, it means no valid m3u8 was found.
+                 // Mark as disabled.
+                 fetch('/api/sources', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ 
+                       id: alt._sourceId, 
+                       name: alt._sourceName.replace(" (无法提取m3u8地址)", "") + " (无法提取m3u8地址)", 
+                       isActive: false 
+                    })
+                 }).catch(() => {});
+                 return { alt, score: -99999 };
+              }
+
+              const startInit = performance.now();
+              const controller = new AbortController();
+              const timeout = setTimeout(() => controller.abort(), 4000); 
+
+              let speedScore = -50000;
+
+              try {
+                const res = await fetch(urlToTest, { signal: controller.signal });
+                const latency = Math.round(performance.now() - startInit);
+                const contentType = res.headers.get('content-type') || '';
+
+                let nextUrl = urlToTest;
+                
+                // If it's HTML or plain text, or the URL doesn't look like a direct video file, parse it
+                if (contentType.includes('text/html') || contentType.includes('text/plain') || (!urlToTest.includes('.m3u8') && !urlToTest.includes('.mp4'))) {
+                    const text = await res.text();
+                    if (text.includes("<html") || text.trim().startsWith("<") || (!text.includes("#EXTM3U") && !text.includes('.m3u8') && !text.includes('.mp4'))) {
+                       const unescapedText = text.replace(/\\/g, '');
+                       let match = unescapedText.match(/https?:\/\/[^"'\s<>]+?\.(?:m3u8|mp4)(?:\?[^"'\s<>]+)?/i);
+                       let extracted = "";
+                       if (match) {
+                          extracted = match[0];
+                       } else {
+                          match = unescapedText.match(/"([^"'\s<>]+?\.(?:m3u8|mp4)(?:\?[^"'\s<>]+)?)"/i) || 
+                                  unescapedText.match(/'([^"'\s<>]+?\.(?:m3u8|mp4)(?:\?[^"'\s<>]+)?)'/i);
+                          if (match && match[1]) {
+                             extracted = new URL(match[1], urlToTest).href;
+                          }
+                       }
+                       if (extracted) {
+                          nextUrl = extracted;
+                          alt._extracted_url = extracted;
+                       } else {
+                          throw new Error("BANNED_SOURCE_NO_MEDIA");
+                       }
+                    } else if (text.includes("#EXTM3U")) {
+                       const lines = text.split("\n").filter((l) => l.trim() && !l.startsWith("#"));
+                       if (lines.length > 0) {
+                         let n1 = lines[0].trim();
+                         nextUrl = n1.startsWith("http") ? n1 : new URL(n1, urlToTest).href;
+                       }
+                    }
+                }
+
+                if (nextUrl.includes(".m3u8")) {
+                  const res2 = await fetch(nextUrl, { signal: controller.signal });
+                  const text2 = await res2.text();
+                  const lines2 = text2.split("\n").filter((l) => l.trim() && !l.startsWith("#"));
+                  if (lines2.length > 0) {
+                    let n2 = lines2[0].trim();
+                    nextUrl = n2.startsWith("http") ? n2 : new URL(n2, nextUrl).href;
+                  }
+                }
+
+                const tsRes = await fetch(nextUrl, { signal: controller.signal });
+                let receivedLength = 0;
+                if (tsRes.body) {
+                  const reader = tsRes.body.getReader();
+                  const streamStart = performance.now();
+                  try {
+                    while (true) {
+                      const { done, value } = await reader.read();
+                      if (done) break;
+                      if (value) receivedLength += value.length;
+                      if (receivedLength > 100 * 1024) {
+                        reader.cancel().catch(() => {});
+                        break;
+                      }
+                    }
+                  } catch (e) {}
+                  const streamEnd = performance.now();
+                  const streamDuration = (streamEnd - streamStart) / 1000;
+                  const speedKbps = receivedLength > 0 && streamDuration > 0 ? receivedLength / 1024 / streamDuration : 0;
+
+                  clearTimeout(timeout);
+                  speedScore = speedKbps * 10 - latency;
+                } else {
+                  throw new Error("No body stream");
+                }
+              } catch (err: any) {
+                const isHtmlWithoutExtension = !urlToTest.includes('.m3u8') && !urlToTest.includes('.mp4') && !urlToTest.includes('.flv');
+                const isCors = err.message === 'Failed to fetch' || err.message?.includes('fetch');
+                const isUnplayableText = isCors && !urlToTest.includes('.mp4');
+
+                if (err.message === "BANNED_SOURCE_NO_MEDIA" || isHtmlWithoutExtension || isUnplayableText) {
+                   speedScore = -99999;
+                   fetch('/api/sources', {
+                      method: 'PUT',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ 
+                         id: alt._sourceId, 
+                         name: alt._sourceName.replace(" (无法提取m3u8地址)", "") + " (无法提取m3u8地址)", 
+                         isActive: false 
+                      })
+                   }).catch(console.error);
+                } else {
+                   const fallbackStart = performance.now();
+                   await fetch(urlToTest, { method: "HEAD", mode: "no-cors" }).catch(() => null);
+                   clearTimeout(timeout);
+                   const fallbackPing = Math.round(performance.now() - fallbackStart);
+                   speedScore = -fallbackPing;
+                }
+              }
+              return { alt, score: speedScore };
+            } catch (e) {
+              return { alt, score: -99999 };
+            }
+          })
+        );
+
+        results.sort((a, b) => b.score - a.score);
+        const validResults = results.filter(r => r.score !== -99999);
+        const bannedResults = results.filter(r => r.score === -99999);
+
+        // Instantly reflect banned sources in the admin settings UI via Zustand
+        if (bannedResults.length > 0) {
+           const store = useAppStore.getState();
+           const newDisabled = new Set(store.userDisabledSources || []);
+           bannedResults.forEach(r => newDisabled.add(r.alt._sourceId));
+           store.setUserDisabledSources(Array.from(newDisabled));
+        }
+        
+        if (validResults.length === 0) {
+           setAltSources([]);
+           setSpeedTestError("暂无有效视频直连，发现的源均已被安全系统拦截屏蔽。");
+           return;
+        }
+
+        const uniqueAlts: any[] = [];
+        const seenSourceIds = new Set<string>();
+        for (const r of validResults) {
+           if (!seenSourceIds.has(r.alt._sourceId)) {
+              seenSourceIds.add(r.alt._sourceId);
+              uniqueAlts.push(r.alt);
+           }
+        }
+        setAltSources(uniqueAlts);
+        
+        const best = validResults[0].alt;
+
+        let bestEpName = "";
+        let bestEpUrl = "";
+        if (best._extracted_url) {
+           bestEpUrl = best._extracted_url;
+        } else if (best.vod_play_url) {
+          const playListSync = getBestM3u8List(best.vod_play_from, best.vod_play_url);
+          if (playListSync) {
+             const firstEp = playListSync.split("#")[0].split("$");
+             if (firstEp[0]) bestEpName = firstEp[0];
+             if (firstEp[1]) bestEpUrl = firstEp[1];
+          }
+        } else if (best.vod_pic) {
+          bestEpUrl = best.vod_pic;
+        }
+
+        router.replace(
+          `/play?id=${best?.vod_id || best?.videoId || best?.id}&sourceId=${encodeURIComponent(best?._sourceId || '')}${bestEpUrl ? `&epName=${encodeURIComponent(bestEpName)}&epUrl=${encodeURIComponent(bestEpUrl)}` : ''}`
+        );
+      } catch (err) {
+        if (searchName) {
+           setSpeedTestError("暂无影片数据，请前往设置配置数据源。");
+        } else {
+           router.replace(`/play?id=${id}&sourceId=${encodeURIComponent(sourceId || '')}`);
+        }
+      }
+    })();
+  }, [isSpeedTestQuery, targetName, currentMode, router, sourceId, id, searchName]);
+
+  // Dedicated AltSources Background Hydrator for Direct-Access Playbacks
+  useEffect(() => {
+     if (!targetName || isSpeedTestQuery || altSources.length > 0) return;
+     if (pingedRefs.current.has('fetch-alt-sources')) return;
+     pingedRefs.current.add('fetch-alt-sources');
+
+     fetch(`/api/videos?wd=${encodeURIComponent(targetName)}&mode=${currentMode}&searchAll=true`)
+       .then(r => r.json())
+       .then(data => {
+           if (data && Array.isArray(data.list)) {
+              const disabledIds = useAppStore.getState().userDisabledSources || [];
+              const activeList = data.list.filter((v: any) => !disabledIds.includes(v._sourceId));
+              
+              let exactMatches = activeList.filter((v: any) => v.vod_name === targetName);
+              if (exactMatches.length === 0) {
+                 exactMatches = activeList.filter((v: any) => v.vod_name.replace(/\s+/g,'').toLowerCase() === targetName.replace(/\s+/g,'').toLowerCase());
+              }
+              let matched = exactMatches.length > 0 ? exactMatches : activeList.filter((v: any) => v.vod_name.includes(targetName) || targetName.includes(v.vod_name));
+              
+              if (matched.length === 0 && activeList.length > 0) matched = activeList.slice(0, 10);
+              
+              const uniqueAlts: any[] = [];
+              const seen = new Set<string>();
+              for (const r of matched) {
+                 if (!seen.has(r._sourceId)) {
+                    seen.add(r._sourceId);
+                    uniqueAlts.push(r);
+                 }
+              }
+              setAltSources(uniqueAlts);
+           }
+       }).catch(() => {});
+  }, [targetName, isSpeedTestQuery, altSources.length, currentMode]);
 
   return (
-    <div className="fixed inset-y-0 right-0 left-0 md:left-64 z-40 bg-[var(--background)] flex flex-col h-[100dvh] overflow-hidden">
+    <div className="fixed inset-y-0 right-0 left-0 md:left-64 z-40 bg-[var(--background)] dark:bg-[#1c1c1e] flex flex-col h-[100dvh] overflow-hidden">
+       {/* Error Overlay */}
+       {speedTestError && (
+         <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[var(--background)] dark:bg-[#1c1c1e]">
+            <div className="flex flex-col items-center space-y-4">
+               <div className="w-16 h-16 bg-red-100 dark:bg-red-800/50 rounded-full flex items-center justify-center mb-4">
+                  <InformationCircleIcon className="w-8 h-8 text-red-500" />
+               </div>
+               <span className="text-gray-500 dark:text-gray-400 text-sm font-medium tracking-widest">{speedTestError}</span>
+               <button onClick={() => router.back()} className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors">
+                  返回
+               </button>
+            </div>
+         </div>
+       )}
+
        {/* Full Screen Loading Overlay (Cross-faded with calculated PC offset for Episodes) */}
-       <div className={`absolute inset-0 z-[100] flex items-center justify-center bg-[var(--background)] transition-opacity duration-500 ${showLoadingOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+       <div className={`absolute inset-0 z-[99] flex items-center justify-center bg-[var(--background)] dark:bg-[#1c1c1e] transition-opacity duration-500 ${showLoadingOverlay ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
           <div className="flex flex-col items-center space-y-4">
              <svg className="animate-spin h-10 w-10 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24">
                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
              </svg>
-             <span className="text-gray-500 dark:text-gray-400 text-sm font-medium tracking-widest animate-pulse">获取影片信息中...</span>
+             <span className="text-gray-500 dark:text-gray-400 text-sm font-medium tracking-widest animate-pulse">
+                {isSpeedTestQuery ? (useAppStore.getState().speedTestPlayback === false ? '获取影片播放源中...' : '测速优选视频源中...') : '获取影片信息中...'}
+             </span>
           </div>
        </div>
        {/* Top Persistent Header */}
@@ -724,6 +1231,16 @@ function PlayerContent() {
                 const ct = videoRef.current?.currentTime || 0
                 setCurrentTime(ct)
                 lastTimeRef.current = ct
+                
+                if (introSkip > 0 && ct < introSkip && !hasSkippedIntro.current) {
+                   videoRef.current!.currentTime = introSkip
+                   hasSkippedIntro.current = true
+                }
+                const currentDur = videoRef.current?.duration || duration
+                if (outroSkip > 0 && currentDur > 0 && ct > (currentDur - outroSkip) && !hasSkippedOutro.current) {
+                   hasSkippedOutro.current = true
+                   handleNext()
+                }
              }}
              onLoadedMetadata={() => {
                 setIsMetadataLoaded(true)
@@ -761,8 +1278,8 @@ function PlayerContent() {
            )}
 
            {/* Controls Bottom Bar */}
-           <div onClick={e => e.stopPropagation()} className={`absolute bottom-0 left-0 right-0 px-4 pb-4 pt-16 bg-gradient-to-t from-black/90 to-transparent z-40 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'} flex flex-col pointer-events-auto`}>
-             <div className="w-full h-1.5 bg-white/30 rounded-full mb-4 cursor-pointer relative group/progress">
+           <div onClick={e => e.stopPropagation()} className={`absolute bottom-0 left-0 right-0 px-4 pb-4 pt-16 bg-gradient-to-t from-black/90 to-transparent z-40 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'} flex flex-col pointer-events-none`}>
+             <div className="w-full h-1.5 bg-white/30 rounded-full mb-4 cursor-pointer relative group/progress pointer-events-auto">
                <input 
                   type="range" min={0} max={duration || 100} value={currentTime} 
                   onChange={handleSeek}
@@ -772,7 +1289,7 @@ function PlayerContent() {
                <div className="absolute top-1/2 -mt-1.5 w-3 h-3 bg-white rounded-full shadow transition-transform scale-0 group-hover/progress:scale-100 pointer-events-none" style={{ left: `${Math.min(100, (currentTime/(duration||1))*100)}%`, transform: 'translate(-50%, -50%)' }}></div>
              </div>
 
-             <div className="flex items-center justify-between">
+             <div className="flex items-center justify-between pointer-events-auto">
                <div className="flex items-center space-x-4">
                   <button onClick={togglePlay} className="text-white hover:text-blue-400 transition transform hover:scale-110">
                      {isPlaying ? <PauseIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" />}
@@ -819,25 +1336,77 @@ function PlayerContent() {
          </div>
 
          {/* Episodes Section */}
-         <div className={`w-full bg-[var(--background)] flex flex-col z-10 overflow-visible pb-16 lg:pb-32 ${episodes.length === 0 ? 'hidden' : 'flex'}`}>
-            {episodes.length > 0 ? (
+         <div className={`w-full bg-[var(--background)] dark:bg-[#1c1c1e] flex flex-col z-10 overflow-visible pb-16 lg:pb-32 flex`}>
+            {true ? (
                <>
-                 <div className="flex items-center justify-between p-4 md:px-8 border-b border-gray-200 dark:border-gray-800 shrink-0 bg-transparent">
+                 <div className="flex items-center justify-between p-4 md:px-8 min-h-[60px] border-b border-black/10 dark:border-white/10 shrink-0 bg-transparent gap-y-2 flex-wrap">
                     <div className="flex items-center">
-                    <h3 className="text-base font-bold text-gray-900 dark:text-white mr-2">选集播放</h3>
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">共 {episodes.length} 集</span>
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white mr-2">
+                       {showSkipConfig ? '跳过设置' : showAltSources ? '更换源站' : '选集播放'}
+                    </h3>
+                    {showAltSources ? (
+                       <span 
+                         onClick={() => {
+                            if (showSkipConfig) return;
+                            useAppStore.getState().setSearchTerm(searchName || targetName || video?.vod_name || "");
+                            useAppStore.getState().setSearchAllSources(true);
+                            router.push('/');
+                         }}
+                         className={`text-xs font-medium cursor-pointer transition-colors ${showSkipConfig ? 'text-transparent pointer-events-none select-none' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}
+                       >
+                         电影不对？点我搜索
+                       </span>
+                    ) : (
+                       <span className={`text-xs font-medium ${showSkipConfig ? 'text-transparent pointer-events-none select-none' : 'text-gray-500 dark:text-gray-400'}`}>共 {episodes.length} 集</span>
+                    )}
                   </div>
-                  {altSources.length > 0 && (
-                     <button onClick={() => setShowAltSources(!showAltSources)} className="text-[11px] font-bold text-white bg-gradient-to-r from-orange-400 to-red-500 px-2.5 py-1 rounded-full shadow-sm hover:opacity-90 transition flex items-center">
-                        {showAltSources ? '返回选集' : '测速换源'} <span className="bg-white/20 px-1.5 rounded-full ml-1 font-mono">{altSources.length}</span>
+                  <div className="flex items-center space-x-2">
+                     <button 
+                         onClick={() => { setShowSkipConfig(!showSkipConfig); setShowAltSources(false); }} 
+                         className={`text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm transition-all ${
+                             showSkipConfig ? 'bg-gray-100 text-gray-600 dark:bg-black/40 dark:text-gray-300 dark:border-white/5 border border-transparent' 
+                             : (introSkip > 0 || outroSkip > 0) ? 'text-white bg-blue-500 dark:bg-blue-600 hover:opacity-90'
+                             : 'text-gray-600 bg-gray-200 dark:bg-[#2c2c2e] dark:border dark:border-white/5 dark:text-gray-300 hover:opacity-90'
+                         }`}
+                     >
+                         {showSkipConfig ? '返回选集' : '跳过片头/尾'}
                      </button>
-                  )}
+                     {altSources.length > 0 && (
+                        <button onClick={() => { setShowAltSources(!showAltSources); setShowSkipConfig(false); }} className={`text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center transition-all ${showAltSources ? 'bg-gray-100 text-gray-600 dark:bg-black/40 dark:text-gray-300 dark:border-white/5 border border-transparent shadow-sm' : 'text-white bg-gradient-to-r from-orange-400 to-red-500 shadow-sm hover:opacity-90'}`}>
+                           {showAltSources ? '返回选集' : '测速换源'} {!showAltSources && <span className="bg-white/20 px-1.5 rounded-full ml-1 font-mono">{altSources.length}</span>}
+                        </button>
+                     )}
+                  </div>
                </div>
                <div 
                  ref={episodesContainerRef}
                  className="flex-1 w-full p-4 md:px-8 content-start"
                >
-                  {showAltSources ? (
+                  {showSkipConfig ? (
+                     <div className="flex flex-col space-y-5 max-w-sm">
+                        <div className="flex flex-col space-y-2">
+                           <label className="text-sm font-bold text-gray-700 dark:text-gray-300">跳过片头 (秒)</label>
+                           <input type="number" min="0" value={introSkip} onChange={e => setIntroSkip(Number(e.target.value))} className="w-full bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow" placeholder="例如: 90" />
+                        </div>
+                        <div className="flex flex-col space-y-2">
+                           <label className="text-sm font-bold text-gray-700 dark:text-gray-300">跳过片尾 (秒)</label>
+                           <input type="number" min="0" value={outroSkip} onChange={e => setOutroSkip(Number(e.target.value))} className="w-full bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow" placeholder="例如: 120" />
+                        </div>
+                        <div className="flex space-x-3 pt-2">
+                           <button onClick={() => {
+                              const conf = { intro: introSkip, outro: outroSkip };
+                              localStorage.setItem('global_skip_config', JSON.stringify(conf));
+                              setShowSkipConfig(false);
+                           }} className="flex-1 bg-blue-500 text-white rounded-xl py-2.5 font-bold hover:bg-blue-600 transition-colors shadow-sm cursor-pointer">保存设置</button>
+                           <button onClick={() => {
+                              setIntroSkip(0); setOutroSkip(0);
+                              localStorage.removeItem('global_skip_config');
+                              setShowSkipConfig(false);
+                           }} className="flex-1 bg-gray-100 dark:bg-white/5 border border-transparent dark:border-white/5 text-gray-700 dark:text-gray-300 rounded-xl py-2.5 font-bold hover:bg-gray-200 dark:hover:bg-white/10 transition-colors cursor-pointer">清空跳过</button>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-2">提示: 设置将全局生效，所有影片将采用此跳过配置。</div>
+                     </div>
+                  ) : showAltSources ? (
                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
                         {/* Current Source Marker */}
                          <div className="p-3 rounded-2xl border-2 border-blue-500 bg-blue-50/50 dark:bg-blue-900/10 flex flex-col justify-center shadow-sm relative overflow-hidden transition-all duration-500">
@@ -924,18 +1493,18 @@ function PlayerContent() {
                 <div className="space-y-4 text-[13px]">
                    <div className="flex flex-col space-y-1">
                       <span className="text-gray-500">影片名称</span>
-                      <span className="font-medium text-gray-900 dark:text-white">{video.vod_name}</span>
+                      <span className="font-medium text-gray-900 dark:text-white break-all">{video.vod_name}</span>
                    </div>
                    {video.vod_director && (
                    <div className="flex flex-col space-y-1">
                       <span className="text-gray-500">导演</span>
-                      <span className="text-gray-800 dark:text-gray-200 leading-relaxed">{video.vod_director}</span>
+                      <span className="text-gray-800 dark:text-gray-200 leading-relaxed break-all whitespace-pre-wrap">{video.vod_director}</span>
                    </div>
                    )}
                    {video.vod_actor && (
                    <div className="flex flex-col space-y-1">
                       <span className="text-gray-500">主演</span>
-                      <span className="text-gray-800 dark:text-gray-200 leading-relaxed text-xs">{video.vod_actor}</span>
+                      <span className="text-gray-800 dark:text-gray-200 leading-relaxed text-xs break-all whitespace-pre-wrap">{video.vod_actor}</span>
                    </div>
                    )}
                    <div className="flex flex-col space-y-1">
@@ -944,7 +1513,7 @@ function PlayerContent() {
                    </div>
                    <div className="flex flex-col space-y-1">
                       <span className="text-gray-500">播放源站</span>
-                      <span className="font-medium text-blue-500 bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 rounded mr-auto">{video._sourceName} ({video._sourceId})</span>
+                      <span className="font-medium text-blue-500 bg-blue-50 dark:bg-blue-500/10 px-2 py-0.5 rounded mr-auto">{video._sourceName}</span>
                    </div>
                    <div className="flex flex-col space-y-1">
                       <span className="text-gray-500">源直连地址</span>
@@ -955,7 +1524,7 @@ function PlayerContent() {
                    {video.vod_content && (
                    <div className="flex flex-col space-y-1 pt-2 border-t border-gray-100 dark:border-gray-800/80">
                       <span className="text-gray-500">剧情简介</span>
-                      <div className="text-gray-700 dark:text-gray-300 text-xs leading-relaxed max-h-32 overflow-y-auto custom-scrollbar" dangerouslySetInnerHTML={{__html: video.vod_content}}></div>
+                      <div className="text-gray-700 dark:text-gray-300 text-xs leading-relaxed max-h-32 overflow-y-auto custom-scrollbar" dangerouslySetInnerHTML={{__html: DOMPurify.sanitize(video.vod_content || '')}}></div>
                    </div>
                    )}
                 </div>

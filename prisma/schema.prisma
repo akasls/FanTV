@@ -12,6 +12,9 @@ model User {
   username       String     @unique
   passwordHash   String
   allowAdultMode Boolean    @default(false)
+  doubanDataProxy   String?
+  doubanImageProxy  String?
+  speedTestPlayback Boolean?
   isActive       Boolean    @default(true)
   role           String     @default("USER")
   sessionId      String?    // Track single-device JWT
@@ -73,5 +76,12 @@ model SystemSetting {
   siteName          String   @default("FanTv")
   siteDescription   String   @default("A modern dual-mode video application.")
   siteLogo          String   @default("")
+  adultModePassword String   @default("")
+  doubanDataProxy   String   @default("")
+  doubanImageProxy  String   @default("")
+  speedTestPlayback Boolean  @default(true) // 播放测速
+  shortDramaApiUrl  String?
+  shortDramaCategories String? // JSON string of subcategories [{name, url}]
+
   updatedAt         DateTime @updatedAt
 }

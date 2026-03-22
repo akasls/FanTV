@@ -14,9 +14,15 @@ interface Source {
 }
 
 export default function SourcesManager() {
-  const { currentMode, currentUser, userSourceOrder, setUserSourceOrder, userDisabledSources, setUserDisabledSources } = useAppStore()
+  const { 
+    currentMode, currentUser, userSourceOrder, setUserSourceOrder, userDisabledSources, setUserDisabledSources,
+    siteConfig
+  } = useAppStore()
   const isAdmin = currentUser?.role === 'ADMIN'
   const canSeeAdult = currentUser?.allowAdultMode === true
+  const [localDramaUrl, setLocalDramaUrl] = useState("")
+  const [localDramaCats, setLocalDramaCats] = useState<{name: string, url: string}[]>([])
+  const [isDramaSaving, setIsDramaSaving] = useState(false)
   const [sources, setSources] = useState<Source[]>([])
   const [loading, setLoading] = useState(true)
   
@@ -28,7 +34,6 @@ export default function SourcesManager() {
   const [newUrl, setNewUrl] = useState('')
   const [newMode, setNewMode] = useState('General')
   const [filterMode, setFilterMode] = useState('All')
-  
   const fetchSources = async () => {
     setLoading(true)
     const res = await fetch('/api/sources')
@@ -49,9 +54,41 @@ export default function SourcesManager() {
     setLoading(false)
   }
 
+  const handleSaveDramaUrl = async () => {
+    setIsDramaSaving(true)
+    try {
+      if (currentUser?.role === 'ADMIN') {
+        const res = await fetch('/api/system-settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 
+            shortDramaApiUrl: localDramaUrl, 
+            shortDramaCategories: JSON.stringify(localDramaCats)
+          })
+        })
+        if (res.ok) {
+           useAppStore.setState({ siteConfig: { ...siteConfig, shortDramaApiUrl: localDramaUrl, shortDramaCategories: JSON.stringify(localDramaCats) } as any })
+        }
+      }
+    } finally {
+      setIsDramaSaving(false)
+    }
+  }
+
   useEffect(() => {
     fetchSources()
   }, [])
+
+  useEffect(() => {
+    if (siteConfig) {
+      if (siteConfig.shortDramaApiUrl) setLocalDramaUrl(siteConfig.shortDramaApiUrl)
+      if ((siteConfig as any).shortDramaCategories) {
+        try {
+          setLocalDramaCats(JSON.parse((siteConfig as any).shortDramaCategories))
+        } catch(e) {}
+      }
+    }
+  }, [siteConfig])
 
   const resetForm = () => {
     setNewName('')
@@ -133,7 +170,11 @@ export default function SourcesManager() {
   const handleExport = () => {
     const dataToExport = {
       General: sources.filter(s => s.mode === 'General').map(s => ({ name: s.name, apiUrl: s.apiUrl })),
-      Adult: sources.filter(s => s.mode === 'Adult').map(s => ({ name: s.name, apiUrl: s.apiUrl }))
+      Adult: sources.filter(s => s.mode === 'Adult').map(s => ({ name: s.name, apiUrl: s.apiUrl })),
+      Config: {
+        shortDramaApiUrl: localDramaUrl,
+        shortDramaCategories: JSON.stringify(localDramaCats)
+      }
     }
     const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(dataToExport, null, 2))
     const downloadAnchorNode = document.createElement('a')
@@ -180,8 +221,25 @@ export default function SourcesManager() {
                }
              }
            }
+            
+            if (data.Config) {
+              const { shortDramaApiUrl, shortDramaCategories } = data.Config;
+              if (shortDramaApiUrl !== undefined || shortDramaCategories !== undefined) {
+                 await fetch('/api/system-settings', {
+                   method: 'PUT',
+                   headers: { 'Content-Type': 'application/json' },
+                   body: JSON.stringify({ shortDramaApiUrl, shortDramaCategories })
+                 });
+                 const currentConfig = useAppStore.getState().siteConfig || {};
+                 useAppStore.setState({ siteConfig: { ...currentConfig, shortDramaApiUrl, shortDramaCategories } as any });
+                 if (shortDramaApiUrl !== undefined) setLocalDramaUrl(shortDramaApiUrl || "");
+                 if (shortDramaCategories) {
+                    try { setLocalDramaCats(JSON.parse(shortDramaCategories)); } catch(e){}
+                 }
+              }
+            }
         }
-        alert(`成功导入 ${importedCount} 个源站！`)
+        alert(`成功导入 ${importedCount} 个源站及相关配置！`)
         fetchSources()
       } catch (err) {
         alert("导入解析失败，请检查文件格式是否为有效的JSON")
@@ -256,7 +314,7 @@ export default function SourcesManager() {
       </div>
 
       {showAdd && (
-        <form onSubmit={handleSubmit} className="bg-white dark:bg-[#1c1c1e] p-4 rounded-2xl border border-gray-200 dark:border-gray-800 space-y-4 shadow-sm">
+        <form onSubmit={handleSubmit} className="bg-white dark:bg-white/5 p-4 rounded-2xl border border-gray-200 dark:border-gray-800 space-y-4 shadow-sm">
           <div>
             <label className="block text-xs text-gray-500 mb-1">源名称 (如: 极速资源)</label>
             <input 
@@ -308,7 +366,7 @@ export default function SourcesManager() {
              if (s.mode === 'Adult' && !canSeeAdult) return false;
              return filterMode === 'All' || s.mode === filterMode;
           }).map((src, idx) => (
-            <li key={src.id} className="bg-white dark:bg-[#1c1c1e] p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800/80 flex items-center group transition hover:-translate-y-0.5 hover:shadow-md">
+            <li key={src.id} className="bg-white dark:bg-white/5 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-800/80 flex items-center group transition hover:-translate-y-0.5 hover:shadow-md">
               <div className="flex flex-col mr-2 space-y-1">
                 <button 
                   disabled={idx === 0}
@@ -327,8 +385,8 @@ export default function SourcesManager() {
               </div>
 
               <div className="flex flex-col flex-1 overflow-hidden mr-4">
-                <span className={`font-medium flex items-center space-x-2 ${userDisabledSources.includes(src.id) ? 'opacity-40 line-through text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}>
-                  <span>{src.name}</span>
+                <span className={`font-medium flex items-center space-x-2 ${userDisabledSources.includes(src.id) || !src.isActive ? 'opacity-40 line-through text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}>
+                  <span>{src.name} {!src.isActive && !src.name.includes('(无法提取m3u8地址)') ? ' (全域禁用)' : ''}</span>
                   <span className={`text-[10px] px-2 py-0.5 rounded-full border ${src.mode === 'Adult' ? 'border-red-500 bg-red-50 text-red-600 dark:bg-red-500/10' : 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-500/10'}`}>
                     {src.mode === 'Adult' ? '圣贤' : '普通'}
                   </span>
@@ -339,13 +397,17 @@ export default function SourcesManager() {
               <div className="flex space-x-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition mr-2">
                 <button 
                   onClick={() => {
+                     if (!src.isActive) {
+                         alert("该源被安全系统全局封禁，无法通过此处启用。如果要恢复，请删除后重新添加源。");
+                         return;
+                     }
                      if (userDisabledSources.includes(src.id)) setUserDisabledSources(userDisabledSources.filter(id => id !== src.id));
                      else setUserDisabledSources([...userDisabledSources, src.id]);
                   }}
-                  className={`p-2 rounded-full transition ${userDisabledSources.includes(src.id) ? 'text-gray-400 bg-gray-100 dark:bg-gray-800' : 'text-green-500 hover:bg-green-50 dark:hover:bg-green-500/10'}`}
-                  title={userDisabledSources.includes(src.id) ? '点击启用' : '点击停用'}
+                  className={`p-2 rounded-full transition ${userDisabledSources.includes(src.id) || !src.isActive ? 'text-gray-400 bg-gray-100 dark:bg-gray-800' : 'text-green-500 hover:bg-green-50 dark:hover:bg-green-500/10'}`}
+                  title={!src.isActive ? '系统彻底封禁' : userDisabledSources.includes(src.id) ? '点击启用' : '点击停用'}
                 >
-                  {userDisabledSources.includes(src.id) ? <EyeSlashIcon className="w-5 h-5 text-red-400" /> : <EyeIcon className="w-5 h-5" />}
+                  {userDisabledSources.includes(src.id) || !src.isActive ? <EyeSlashIcon className="w-5 h-5 text-red-400" /> : <EyeIcon className="w-5 h-5" />}
                 </button>
                 {isAdmin && (
                   <>
@@ -368,6 +430,93 @@ export default function SourcesManager() {
           ))}
         </ul>
       )}
+
+      {/* Short Drama Configuration Section */}
+      <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-800">
+        <h2 className="text-lg font-medium mb-4">短剧接口及分类配置</h2>
+        <div className="bg-white dark:bg-white/5 p-5 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-6">
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">默认短剧接口地址</label>
+            <p className="text-xs text-gray-500 mb-3">当首页点击&quot;短剧&quot;频道时，展示由此 API URL 提供的数据。如果不配置将不会在首页展示短剧模块。</p>
+            <div className="flex gap-2">
+              <input 
+                value={localDramaUrl}
+                onChange={(e) => setLocalDramaUrl(e.target.value)}
+                placeholder="请输入短剧 API 接口完整的 URL (如 https://api.example.com/api.php/provide/vod)"
+                className="flex-1 bg-gray-50 dark:bg-black/50 border border-gray-200 dark:border-gray-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 ring-blue-500"
+              />
+              <button
+                onClick={handleSaveDramaUrl}
+                disabled={isDramaSaving}
+                className="shrink-0 px-4 py-2.5 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-medium transition-colors disabled:opacity-50"
+              >
+                {isDramaSaving ? "保存中" : "保存"}
+              </button>
+            </div>
+          </div>
+          
+          <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
+            <div className="flex items-center justify-between mb-3">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">二级分类配置</label>
+              <button
+                onClick={() => setLocalDramaCats([...localDramaCats, { name: "", url: "" }])}
+                className="text-xs flex items-center text-blue-500 hover:text-blue-600 font-medium"
+              >
+                <PlusIcon className="w-4 h-4 mr-1" />
+                新增分类
+              </button>
+            </div>
+            
+            {localDramaCats.length === 0 ? (
+              <div className="text-center py-6 text-sm text-gray-400 bg-gray-50 dark:bg-black/20 rounded-xl border border-dashed border-gray-200 dark:border-gray-800">
+                暂未配置短剧二级分类，点击右上角新增
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {localDramaCats.map((cat, idx) => (
+                  <div key={idx} className="flex gap-2 items-start">
+                    <input 
+                      value={cat.name}
+                      onChange={(e) => {
+                        const newCats = [...localDramaCats];
+                        newCats[idx].name = e.target.value;
+                        setLocalDramaCats(newCats);
+                      }}
+                      placeholder="分类名称 (如: 甜宠)"
+                      className="w-1/4 shrink-0 bg-white dark:bg-black/50 border border-gray-200 dark:border-gray-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                    />
+                    <input 
+                      value={cat.url}
+                      onChange={(e) => {
+                        const newCats = [...localDramaCats];
+                        newCats[idx].url = e.target.value;
+                        setLocalDramaCats(newCats);
+                      }}
+                      placeholder="API URL (如: https://.../vod/?t=37)"
+                      className="flex-1 bg-white dark:bg-black/50 border border-gray-200 dark:border-gray-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={() => {
+                        const newCats = [...localDramaCats];
+                        newCats.splice(idx, 1);
+                        setLocalDramaCats(newCats);
+                      }}
+                      className="shrink-0 p-2.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 rounded-lg transition-colors"
+                    >
+                      <TrashIcon className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-4 leading-relaxed">
+              * 分类名称将显示在首页短剧频道的二级菜单中。
+              <br/>* 对应的 API URL 必须完整填写，包含目标站点的全路径与分类参数（例如 `?ac=videolist&t=37`），分页参数 `&pg=x` 会由核心流自动附加。
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

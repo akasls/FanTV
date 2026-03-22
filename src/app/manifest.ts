@@ -5,6 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'FanTv',
     short_name: 'FanTv',
     description: 'A modern dual-mode video application.',
+    id: '/',
     start_url: '/',
     display: 'standalone',
     background_color: '#1c1c1e',
@@ -29,7 +30,7 @@ export default function manifest(): MetadataRoute.Manifest {
         src: '/icons/icon-512x512.png',
         sizes: '512x512',
         type: 'image/png',
-        purpose: 'maskable',
+        purpose: 'any',
       },
     ],
   }

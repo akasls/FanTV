@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'] })
 
 export const viewport: Viewport = {
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#f9fafb' },
+    { media: '(prefers-color-scheme: light)', color: '#e4e8e9' },
     { media: '(prefers-color-scheme: dark)', color: '#1c1c1e' },
   ],
   width: 'device-width',
@@ -41,7 +41,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh" suppressHydrationWarning>
-      <body className={`${inter.className} bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen`}>
+      <body className={`${inter.className} bg-[var(--background)] dark:bg-[#1c1c1e] text-gray-900 dark:text-gray-100 min-h-screen`}>
         <PWAProvider />
         <AppProvider>
           {children}
