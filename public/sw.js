@@ -4,14 +4,15 @@ const CACHE_NAME = 'fantv-pwa-cache-v1';
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      // Cache vital offline capabilities
-      return cache.addAll([
+      // Cache vital offline capabilities safely, without crashing the SW install on redirects
+      const urls = [
         '/',
         '/settings',
         '/favorites',
         '/history',
         '/login'
-      ]);
+      ];
+      return Promise.allSettled(urls.map(url => cache.add(url)));
     })
   );
   self.skipWaiting();

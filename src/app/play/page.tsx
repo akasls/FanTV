@@ -230,11 +230,35 @@ function PlayerContent() {
   const [volume, setVolume] = useState(1)
   const [isMuted, setIsMuted] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [isWebFullscreen, setIsWebFullscreen] = useState(false)
   const [showControls, setShowControls] = useState(true)
 
   const lastTimeRef = useRef(0)
   const lastDurRef = useRef(0)
   const episodesContainerRef = useRef<HTMLDivElement>(null)
+
+  // Web Fullscreen and Screen Lock
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 1024 && window.matchMedia("(orientation: landscape)").matches) {
+        setIsWebFullscreen(true)
+      } else {
+        setIsWebFullscreen(false)
+      }
+    }
+    window.addEventListener('resize', handleResize)
+    handleResize()
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
+  useEffect(() => {
+    if (isFullscreen || isWebFullscreen) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => { document.body.style.overflow = '' }
+  }, [isFullscreen, isWebFullscreen])
 
   // Save history periodically & on unmount
   useEffect(() => {
@@ -789,10 +813,6 @@ function PlayerContent() {
        videoRef.current.currentTime = newTime
        setCurrentTime(newTime)
     }
-    
-    if (touchStartRef.current.type === 'none') {
-       setShowControls(prev => !prev)
-    }
 
     touchStartRef.current = null
     setSeekingDelta(null)
@@ -1207,9 +1227,17 @@ function PlayerContent() {
            ref={playerContainerRef}
            onMouseMove={handleMouseMove}
            onMouseLeave={() => isPlaying && setShowControls(false)}
-           onClick={togglePlay}
+           onClick={(e) => {
+             if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+               setShowControls(prev => !prev);
+               return;
+             }
+             togglePlay(e);
+           }}
            onDoubleClick={toggleFullscreen}
-           className="relative flex items-center justify-center bg-black shrink-0 aspect-video lg:max-h-[75vh] w-full"
+           className={`relative flex items-center justify-center bg-black shrink-0 ${
+             (isFullscreen || isWebFullscreen) ? 'fixed inset-0 z-[100] w-full h-[100dvh]' : 'aspect-video lg:max-h-[75vh] w-full'
+           }`}
          >
            {/* Gesture Overlay (Touch only) */}
            <div 
