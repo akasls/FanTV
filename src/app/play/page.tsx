@@ -862,6 +862,27 @@ function PlayerContent() {
   const showLoadingOverlay = !speedTestError && !isLoaderForcedOff && (isSpeedTestQuery || (!searchName && !video) || (!rawUrl && episodes.length > 0) || !isVideoReady)
 
   useEffect(() => {
+     let loadTimer: NodeJS.Timeout;
+     if (showLoadingOverlay && !speedTestError) {
+        loadTimer = setTimeout(() => {
+           setSpeedTestError("请求解析超时失效。您的网络环境（如代理规则）可能无法连通该视频源，请返回并尝试选择其他来源。")
+        }, 15000)
+     }
+     
+     let bufferTimer: NodeJS.Timeout;
+     if (isBuffering && !speedTestError && !showLoadingOverlay) {
+        bufferTimer = setTimeout(() => {
+           setSpeedTestError("视频缓冲极度缓慢或连接已断开，请检查网络/代理或切换源站。")
+        }, 30000)
+     }
+
+     return () => {
+        if (loadTimer) clearTimeout(loadTimer)
+        if (bufferTimer) clearTimeout(bufferTimer)
+     }
+  }, [showLoadingOverlay, isBuffering, speedTestError])
+
+  useEffect(() => {
     if (!isSpeedTestQuery || !targetName) return;
 
     if (pingedRefs.current.has('auto-speedtest')) return;
