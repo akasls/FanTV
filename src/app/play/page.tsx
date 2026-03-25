@@ -247,7 +247,10 @@ function PlayerContent() {
     const handleResize = () => {
       const portrait = typeof window !== 'undefined' ? window.matchMedia("(orientation: portrait)").matches : true
       setIsPortrait(portrait)
-      if (window.innerWidth < 1024 && !portrait) {
+      
+      const currentIsIOS = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+
+      if (window.innerWidth < 1024 && !portrait && currentIsIOS) {
         setIsWebFullscreen(true)
       } else {
         setIsWebFullscreen(false)
@@ -736,7 +739,9 @@ function PlayerContent() {
     const container = playerContainerRef.current
     if (!container) return
     
-    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+    const currentIsIOS = typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+
+    if (typeof window !== 'undefined' && window.innerWidth < 1024 && currentIsIOS) {
        setIsManualWebFullscreen(!isManualWebFullscreen)
        return
     }
@@ -1246,7 +1251,7 @@ function PlayerContent() {
   }, [targetName, isSpeedTestQuery, altSources.length, currentMode]);
 
   return (
-    <div className="fixed inset-y-0 right-0 left-0 md:left-64 z-40 bg-[var(--background)] dark:bg-[#1c1c1e] flex flex-col h-[100dvh] overflow-hidden">
+    <div className={`fixed inset-y-0 right-0 left-0 md:left-64 bg-[var(--background)] dark:bg-[#1c1c1e] flex flex-col h-[100dvh] overflow-hidden ${(isFullscreen || isWebFullscreen || isManualWebFullscreen) ? 'z-[60]' : 'z-40'}`}>
        {/* Error Overlay */}
        {speedTestError && (
          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[var(--background)] dark:bg-[#1c1c1e]">

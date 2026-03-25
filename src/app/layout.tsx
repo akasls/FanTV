@@ -20,6 +20,7 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: 'FanTv',
   description: 'A modern dual-mode video application.',
+  manifest: '/manifest.webmanifest',
   icons: { 
      icon: '/logo.png', 
      apple: '/icons/icon-192x192.png' 
