@@ -1389,7 +1389,7 @@ function PlayerContent() {
            {/* Mobile Handlers & Overlays */}
            {/* Lock Button (Mobile Fullscreen Only) */}
            {isAnyFullscreen && (
-             <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-[60] lg:hidden transition-opacity duration-300 ${showControls || isLocked ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+             <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-[60] lg:hidden transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                <button 
                  onClick={(e) => { e.stopPropagation(); setIsLocked(!isLocked); setShowControls(true); }}
                  className="p-3 bg-black/50 hover:bg-black/70 rounded-full backdrop-blur-md text-white/80 hover:text-white transition-all pointer-events-auto shadow-xl border border-white/5"
@@ -1442,7 +1442,7 @@ function PlayerContent() {
                  </div>
                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar grid grid-cols-2 gap-2 content-start">
                     {episodes.map((ep, idx) => {
-                       const isActive = ep.name === epName || (video && ep.name === video.vod_play_list[0]?.urls[currentIndex]?.name);
+                       const isActive = ep.name === epName || (video && ep.name === video.vod_play_list[0]?.urls?.[currentIndex]?.name);
                        return (
                          <button
                            key={idx}
