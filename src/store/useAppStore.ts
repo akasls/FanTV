@@ -379,7 +379,9 @@ export const useAppStore = create<AppState>()(
         doubanCountry: state.doubanCountry,
         doubanYear: state.doubanYear,
         doubanSort: state.doubanSort,
-        targetSearchSource: state.targetSearchSource
+        targetSearchSource: state.targetSearchSource,
+        drillDownCustomApiUrl: state.drillDownCustomApiUrl,
+        drillDownCategoryId: state.drillDownCategoryId
       }),
     }
   )

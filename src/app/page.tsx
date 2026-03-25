@@ -219,6 +219,27 @@ const API_DELAY = 1000;
     sourceScrollRef.current.scrollLeft = scrollLeftSource.current - walk;
   };
 
+  // Scroll to active source in Adult mode on load
+  useEffect(() => {
+    if (mounted && currentMode === "Adult" && selectedSourceId && sourceScrollRef.current) {
+       // give rendering a cycle to paint the buttons
+       requestAnimationFrame(() => {
+          if (!sourceScrollRef.current) return;
+          const activeBtn = sourceScrollRef.current.querySelector(`button[data-source-id="${selectedSourceId}"]`) as HTMLElement;
+          if (activeBtn) {
+             const containerRect = sourceScrollRef.current.getBoundingClientRect();
+             const btnRect = activeBtn.getBoundingClientRect();
+             if (btnRect.left < containerRect.left || btnRect.right > containerRect.right) {
+                 sourceScrollRef.current.scrollTo({
+                    left: sourceScrollRef.current.scrollLeft + (btnRect.left - containerRect.left) - 20,
+                    behavior: "smooth"
+                 });
+             }
+          }
+       })
+    }
+  }, [mounted, currentMode, selectedSourceId, sources.length]);
+
   // Fetch available sources for dropdown
   useEffect(() => {
     if (!mounted) return;
@@ -251,6 +272,7 @@ const API_DELAY = 1000;
 
   // Fetch Douban Popular Lists
   useEffect(() => {
+    if (!mounted) return;
     if (
       currentMode === "General" &&
       !searchTerm &&
@@ -733,6 +755,7 @@ const API_DELAY = 1000;
                 {sources.map((s) => (
                   <button
                     key={s.id}
+                    data-source-id={s.id}
                     onClick={(e) => {
                       if (hasDraggedSource.current) {
                         e.preventDefault();
