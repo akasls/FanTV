@@ -12,7 +12,9 @@ import {
   SpeakerXMarkIcon, 
   ArrowsPointingOutIcon, 
   ArrowsPointingInIcon, 
-  ForwardIcon 
+  ForwardIcon,
+  BackwardIcon,
+  SunIcon
 } from '@heroicons/react/24/outline'
 import { HeartIcon as HeartSolid } from '@heroicons/react/24/solid'
 import { useAppStore } from '@/store/useAppStore'
@@ -236,6 +238,8 @@ function PlayerContent() {
   const [isBuffering, setIsBuffering] = useState(false)
   const [isManualWebFullscreen, setIsManualWebFullscreen] = useState(false)
   const [isPortrait, setIsPortrait] = useState(true)
+  const [volumeDelta, setVolumeDelta] = useState<number | null>(null)
+  const [brightnessDelta, setBrightnessDelta] = useState<number | null>(null)
 
   const lastTimeRef = useRef(0)
   const lastDurRef = useRef(0)
@@ -850,6 +854,7 @@ function PlayerContent() {
        videoRef.current.volume = newVol
        setVolume(newVol)
        setIsMuted(newVol === 0)
+       setVolumeDelta(newVol)
        exposeVolumeSlider()
     } else if (touchStartRef.current.type === 'brightness') {
        const rect = playerContainerRef.current!.getBoundingClientRect()
@@ -857,6 +862,7 @@ function PlayerContent() {
        const percent = -deltaY / Math.max(refLength, 1)
        const newBright = Math.max(0.1, Math.min(1, touchStartRef.current.startBright + percent))
        setBrightness(newBright)
+       setBrightnessDelta(newBright)
     }
   }
 
@@ -872,6 +878,8 @@ function PlayerContent() {
 
     touchStartRef.current = null
     setSeekingDelta(null)
+    setVolumeDelta(null)
+    setBrightnessDelta(null)
   }
 
   const [isLoaderForcedOff, setIsLoaderForcedOff] = useState(false)
@@ -894,15 +902,15 @@ function PlayerContent() {
      let loadTimer: NodeJS.Timeout;
      if (showLoadingOverlay && !speedTestError) {
         loadTimer = setTimeout(() => {
-           setSpeedTestError("请求解析超时失效。您的网络环境（如代理规则）可能无法连通该视频源，请返回并尝试选择其他来源。")
-        }, 15000)
+           setSpeedTestError("请求解析超时失效。您的网络环境可能较慢、不连通，或者该节点已宕机，请返回尝试选择其他片源。")
+        }, 40000)
      }
      
      let bufferTimer: NodeJS.Timeout;
      if (isBuffering && !speedTestError && !showLoadingOverlay) {
         bufferTimer = setTimeout(() => {
-           setSpeedTestError("视频缓冲极度缓慢或连接已断开，请检查网络/代理或切换源站。")
-        }, 30000)
+           setSpeedTestError("视频缓冲极度缓慢或连接已断开，请检查网络或切换源站。")
+        }, 60000)
      }
 
      return () => {
@@ -1250,8 +1258,10 @@ function PlayerContent() {
        }).catch(() => {});
   }, [targetName, isSpeedTestQuery, altSources.length, currentMode]);
 
+  const isAnyFullscreen = isFullscreen || isWebFullscreen || isManualWebFullscreen;
+
   return (
-    <div className={`fixed inset-y-0 right-0 left-0 md:left-64 bg-[var(--background)] dark:bg-[#1c1c1e] flex flex-col h-[100dvh] overflow-hidden ${(isFullscreen || isWebFullscreen || isManualWebFullscreen) ? 'z-[60]' : 'z-40'}`}>
+    <div className={`fixed inset-y-0 right-0 left-0 md:left-64 bg-[var(--background)] dark:bg-[#1c1c1e] flex flex-col h-[100dvh] overflow-hidden ${isAnyFullscreen ? 'z-[60]' : 'z-40'}`}>
        {/* Error Overlay */}
        {speedTestError && (
          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[var(--background)] dark:bg-[#1c1c1e]">
@@ -1280,6 +1290,7 @@ function PlayerContent() {
           </div>
        </div>
        {/* Top Persistent Header */}
+       {!isAnyFullscreen && (
        <header className={`flex items-center justify-between pt-4 md:pt-6 px-4 md:px-8 pb-3 min-h-[64px] shrink-0 bg-transparent z-50 transition-opacity duration-500 ${showLoadingOverlay ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
          <div className="flex items-center">
             <button onClick={() => router.back()} className="p-2 -ml-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition">
@@ -1298,6 +1309,7 @@ function PlayerContent() {
            </button>
          </div>
        </header>
+       )}
        <div className={`flex-1 flex flex-col w-full overflow-y-auto overflow-x-hidden relative transition-opacity duration-500 ${showLoadingOverlay ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}>
          {/* Video Section */}
          <div 
@@ -1408,6 +1420,34 @@ function PlayerContent() {
              }}
            />
 
+           {/* Swipe Info Overlays */}
+           <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-md px-6 py-4 rounded-2xl flex flex-col items-center gap-2 z-[90] transition-opacity duration-200 pointer-events-none ${seekingDelta !== null ? 'opacity-100' : 'opacity-0'}`}>
+             <div className="flex items-center gap-2 text-white">
+               {seekingDelta !== null && seekingDelta > 0 ? <ForwardIcon className="w-8 h-8" /> : <ArrowLeftIcon className="w-8 h-8" />}
+               <span className="text-xl font-bold font-mono">
+                 {seekingDelta !== null ? `${seekingDelta > 0 ? '+' : ''}${Math.round(seekingDelta)}s` : ''}
+               </span>
+             </div>
+           </div>
+
+           <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-md px-6 py-4 rounded-2xl flex flex-col items-center gap-2 z-[90] transition-opacity duration-200 pointer-events-none ${volumeDelta !== null ? 'opacity-100' : 'opacity-0'}`}>
+             <div className="flex items-center gap-2 text-white">
+               {volumeDelta !== null && volumeDelta === 0 ? <SpeakerXMarkIcon className="w-8 h-8" /> : <SpeakerWaveIcon className="w-8 h-8" />}
+               <span className="text-xl font-bold font-mono">
+                 {volumeDelta !== null ? `${Math.round(volumeDelta * 100)}%` : ''}
+               </span>
+             </div>
+           </div>
+
+           <div className={`absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-black/60 backdrop-blur-md px-6 py-4 rounded-2xl flex flex-col items-center gap-2 z-[90] transition-opacity duration-200 pointer-events-none ${brightnessDelta !== null ? 'opacity-100' : 'opacity-0'}`}>
+             <div className="flex items-center gap-2 text-white">
+               <SunIcon className="w-8 h-8" />
+               <span className="text-xl font-bold font-mono">
+                 {brightnessDelta !== null ? `${Math.round(brightnessDelta * 100)}%` : ''}
+               </span>
+             </div>
+           </div>
+
            {/* Brightness Overlay */}
            <div 
              className="absolute inset-0 bg-black pointer-events-none z-30 transition-opacity duration-150" 
@@ -1458,7 +1498,7 @@ function PlayerContent() {
                     </button>
                   )}
 
-                  <div className="hidden sm:flex items-center space-x-2" onMouseEnter={() => setShowVolumeSlider(true)} onMouseLeave={() => setShowVolumeSlider(false)}>
+                  <div className="hidden lg:flex items-center space-x-2" onMouseEnter={() => setShowVolumeSlider(true)} onMouseLeave={() => setShowVolumeSlider(false)}>
                     <button onClick={toggleMute} className="text-white hover:text-blue-400 transition transform hover:scale-110">
                       {isMuted || volume === 0 ? <SpeakerXMarkIcon className="w-6 h-6" /> : <SpeakerWaveIcon className="w-6 h-6" />}
                     </button>
