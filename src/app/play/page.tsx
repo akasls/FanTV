@@ -234,6 +234,8 @@ function PlayerContent() {
   const [showControls, setShowControls] = useState(true)
   const [isVerticalVideo, setIsVerticalVideo] = useState(false)
   const [isBuffering, setIsBuffering] = useState(false)
+  const [isManualWebFullscreen, setIsManualWebFullscreen] = useState(false)
+  const [isPortrait, setIsPortrait] = useState(true)
 
   const lastTimeRef = useRef(0)
   const lastDurRef = useRef(0)
@@ -243,7 +245,9 @@ function PlayerContent() {
   // Web Fullscreen and Screen Lock
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth < 1024 && window.matchMedia("(orientation: landscape)").matches) {
+      const portrait = typeof window !== 'undefined' ? window.matchMedia("(orientation: portrait)").matches : true
+      setIsPortrait(portrait)
+      if (window.innerWidth < 1024 && !portrait) {
         setIsWebFullscreen(true)
       } else {
         setIsWebFullscreen(false)
@@ -254,14 +258,16 @@ function PlayerContent() {
     return () => window.removeEventListener('resize', handleResize)
   }, [])
 
+  const shouldSimulateLandscape = Boolean(isManualWebFullscreen && isPortrait && !isVerticalVideo)
+
   useEffect(() => {
-    if (isFullscreen || isWebFullscreen) {
+    if (isFullscreen || isWebFullscreen || isManualWebFullscreen) {
       document.body.style.overflow = 'hidden'
     } else {
       document.body.style.overflow = ''
     }
     return () => { document.body.style.overflow = '' }
-  }, [isFullscreen, isWebFullscreen])
+  }, [isFullscreen, isWebFullscreen, isManualWebFullscreen])
 
   // Save history periodically & on unmount
   useEffect(() => {
@@ -730,6 +736,11 @@ function PlayerContent() {
     const container = playerContainerRef.current
     if (!container) return
     
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+       setIsManualWebFullscreen(!isManualWebFullscreen)
+       return
+    }
+
     if (!document.fullscreenElement) {
       if (container.requestFullscreen) {
          await container.requestFullscreen().catch((err: any) => console.error("Fullscreen err:", err))
@@ -792,8 +803,16 @@ function PlayerContent() {
     if (!touchStartRef.current || !videoRef.current) return
     
     const touch = e.touches[0]
-    const deltaX = touch.clientX - touchStartRef.current.x
-    const deltaY = touch.clientY - touchStartRef.current.y
+    let rawDeltaX = touch.clientX - touchStartRef.current.x
+    let rawDeltaY = touch.clientY - touchStartRef.current.y
+
+    let deltaX = rawDeltaX
+    let deltaY = rawDeltaY
+    if (shouldSimulateLandscape) {
+        deltaX = rawDeltaY
+        deltaY = -rawDeltaX
+    }
+
     const absX = Math.abs(deltaX)
     const absY = Math.abs(deltaY)
 
@@ -802,7 +821,9 @@ function PlayerContent() {
           touchStartRef.current.type = 'seek'
        } else if (absY > 20 && absY > absX) {
           const rect = playerContainerRef.current!.getBoundingClientRect()
-          const isLeftSide = touchStartRef.current.x < rect.left + rect.width / 2
+          const isLeftSide = shouldSimulateLandscape 
+             ? touchStartRef.current.y < rect.top + rect.height / 2
+             : touchStartRef.current.x < rect.left + rect.width / 2
           touchStartRef.current.type = isLeftSide ? 'brightness' : 'volume'
        } else {
           return
@@ -811,13 +832,15 @@ function PlayerContent() {
 
     if (touchStartRef.current.type === 'seek') {
        const rect = playerContainerRef.current!.getBoundingClientRect()
-       const percent = deltaX / Math.max(rect.width, 1)
+       const refLength = shouldSimulateLandscape ? rect.height : rect.width
+       const percent = deltaX / Math.max(refLength, 1)
        const deltaSeconds = percent * 180 // Max +/- 3 mins per full screen swipe
        setSeekingDelta(deltaSeconds)
        setShowControls(true)
     } else if (touchStartRef.current.type === 'volume') {
        const rect = playerContainerRef.current!.getBoundingClientRect()
-       const percent = -deltaY / Math.max(rect.height, 1)
+       const refLength = shouldSimulateLandscape ? rect.width : rect.height
+       const percent = -deltaY / Math.max(refLength, 1)
        const newVol = Math.max(0, Math.min(1, touchStartRef.current.startVol + percent))
        videoRef.current.volume = newVol
        setVolume(newVol)
@@ -825,7 +848,8 @@ function PlayerContent() {
        exposeVolumeSlider()
     } else if (touchStartRef.current.type === 'brightness') {
        const rect = playerContainerRef.current!.getBoundingClientRect()
-       const percent = -deltaY / Math.max(rect.height, 1)
+       const refLength = shouldSimulateLandscape ? rect.width : rect.height
+       const percent = -deltaY / Math.max(refLength, 1)
        const newBright = Math.max(0.1, Math.min(1, touchStartRef.current.startBright + percent))
        setBrightness(newBright)
     }
@@ -1309,8 +1333,19 @@ function PlayerContent() {
              toggleFullscreen(e)
            }}
            className={`relative flex items-center justify-center bg-black shrink-0 transition-opacity duration-300 ${
-             (isFullscreen || isWebFullscreen) ? 'fixed inset-0 z-[100] w-full h-[100dvh]' : (isVerticalVideo ? 'w-full aspect-[3/4] max-h-[55vh] sm:max-h-[70vh]' : 'aspect-video lg:max-h-[75vh] w-full')
+             (!shouldSimulateLandscape && (isFullscreen || isWebFullscreen || isManualWebFullscreen)) ? 'fixed inset-0 z-[100] w-full h-[100dvh]' : ''
+           } ${
+             (!isFullscreen && !isWebFullscreen && !isManualWebFullscreen) ? (isVerticalVideo ? 'w-full aspect-[3/4] max-h-[55vh] sm:max-h-[70vh]' : 'aspect-video lg:max-h-[75vh] w-full') : ''
            }`}
+           style={shouldSimulateLandscape ? {
+             position: 'fixed',
+             top: '50%',
+             left: '50%',
+             width: '100dvh',
+             height: '100vw',
+             transform: 'translate(-50%, -50%) rotate(90deg)',
+             zIndex: 100,
+           } : {}}
          >
            {/* Gesture Overlay (Touch only) */}
            <div 
