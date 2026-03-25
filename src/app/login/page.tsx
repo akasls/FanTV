@@ -28,6 +28,21 @@ export default function LoginPage() {
       if (!res.ok) throw new Error(data.error || '登录失败')
       
       setCurrentUser(data)
+
+      try {
+        const syncRes = await fetch('/api/users/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'pull' })
+        })
+        if (syncRes.ok) {
+          const cloudData = await syncRes.json()
+          useAppStore.getState().setHistoryData(cloudData.historyData || [])
+          useAppStore.getState().setFavoriteData(cloudData.favoriteData || [])
+          if (cloudData.sourceOrder) useAppStore.getState().setUserSourceOrder(cloudData.sourceOrder)
+        }
+      } catch (err) {}
+
       router.push('/')
       router.refresh()
     } catch(err: any) {

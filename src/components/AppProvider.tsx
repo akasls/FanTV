@@ -31,8 +31,8 @@ export default function AppProvider({ children }: { children: React.ReactNode })
                headers: { 'Content-Type': 'application/json' },
                body: JSON.stringify({ action: 'pull' })
             }).then(res => res.json()).then(cloudData => {
-               if (cloudData.historyData) setHistoryData(cloudData.historyData)
-               if (cloudData.favoriteData) setFavoriteData(cloudData.favoriteData)
+               if (cloudData.historyData !== undefined) setHistoryData(cloudData.historyData || [])
+               if (cloudData.favoriteData !== undefined) setFavoriteData(cloudData.favoriteData || [])
                if (cloudData.sourceOrder) setUserSourceOrder(cloudData.sourceOrder)
             }).catch(console.error)
          }

@@ -195,9 +195,11 @@ export default function SourcesManager() {
         let importedCount = 0
         setLoading(true)
         
+        const existingUrls = new Set(sources.map((s: Source) => s.apiUrl))
         if (Array.isArray(data)) {
            for (const src of data) {
-              if (src.name && src.apiUrl && src.mode) {
+              if (src.name && src.apiUrl && src.mode && !existingUrls.has(src.apiUrl)) {
+                 existingUrls.add(src.apiUrl)
                  await fetch('/api/sources', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -210,7 +212,8 @@ export default function SourcesManager() {
            for (const mode of ['General', 'Adult']) {
              if (Array.isArray(data[mode])) {
                for (const src of data[mode]) {
-                 if (src.name && src.apiUrl) {
+                 if (src.name && src.apiUrl && !existingUrls.has(src.apiUrl)) {
+                   existingUrls.add(src.apiUrl)
                    await fetch('/api/sources', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
@@ -432,6 +435,7 @@ export default function SourcesManager() {
       )}
 
       {/* Short Drama Configuration Section */}
+      {isAdmin && (
       <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-800">
         <h2 className="text-lg font-medium mb-4">短剧接口及分类配置</h2>
         <div className="bg-white dark:bg-white/5 p-5 rounded-2xl border border-gray-200 dark:border-gray-800 shadow-sm space-y-6">
@@ -517,6 +521,7 @@ export default function SourcesManager() {
           </div>
         </div>
       </div>
+      )}
     </div>
   )
 }

@@ -232,9 +232,12 @@ function PlayerContent() {
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [isWebFullscreen, setIsWebFullscreen] = useState(false)
   const [showControls, setShowControls] = useState(true)
+  const [isVerticalVideo, setIsVerticalVideo] = useState(false)
+  const [isBuffering, setIsBuffering] = useState(false)
 
   const lastTimeRef = useRef(0)
   const lastDurRef = useRef(0)
+  const clickTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const episodesContainerRef = useRef<HTMLDivElement>(null)
 
   // Web Fullscreen and Screen Lock
@@ -522,7 +525,11 @@ function PlayerContent() {
            startPos = hist.currentTime
         }
 
-        const hlsConfig: any = {}
+        const hlsConfig: any = {
+           maxBufferLength: 60,
+           maxMaxBufferLength: 600,
+           maxBufferSize: 60 * 1000 * 1000,
+        }
         if (startPos > 0) hlsConfig.startPosition = startPos
         if (enableAdBlock) {
            hlsConfig.pLoader = AdBlockXhrLoader as any
@@ -532,6 +539,23 @@ function PlayerContent() {
         
         hls.loadSource(rawUrl)
         hls.attachMedia(videoRef.current!)
+        
+        hls.on(Hls.default.Events.ERROR, function (_: any, data: any) {
+           if (data.fatal) {
+              switch (data.type) {
+                 case Hls.default.ErrorTypes.NETWORK_ERROR:
+                   hls.startLoad();
+                   break;
+                 case Hls.default.ErrorTypes.MEDIA_ERROR:
+                   hls.recoverMediaError();
+                   break;
+                 default:
+                   hls.destroy();
+                   break;
+              }
+           }
+        });
+
         hls.on(Hls.default.Events.MANIFEST_PARSED, () => {
            if (startPos > 0) {
                setTimeout(() => { if (videoRef.current) videoRef.current.currentTime = startPos }, 100)
@@ -585,6 +609,7 @@ function PlayerContent() {
 
   // Controls Visibility
   const handleMouseMove = () => {
+    if (typeof window !== 'undefined' && window.innerWidth < 1024) return;
     setShowControls(true)
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current)
     controlsTimeoutRef.current = setTimeout(() => {
@@ -714,7 +739,9 @@ function PlayerContent() {
          (container as any).msRequestFullscreen()
       }
       if (window.screen && window.screen.orientation && (window.screen.orientation as any).lock) {
-         (window.screen.orientation as any).lock('landscape').catch((err: any) => console.warn(err))
+         if (!isVerticalVideo) {
+            (window.screen.orientation as any).lock('landscape').catch((err: any) => console.warn(err))
+         }
       }
     } else {
       if (document.exitFullscreen) {
@@ -1229,14 +1256,39 @@ function PlayerContent() {
            onMouseLeave={() => isPlaying && setShowControls(false)}
            onClick={(e) => {
              if (typeof window !== 'undefined' && window.innerWidth < 1024) {
-               setShowControls(prev => !prev);
+               setShowControls(prev => {
+                 const nextState = !prev;
+                 if (nextState) {
+                    if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current)
+                    controlsTimeoutRef.current = setTimeout(() => {
+                      if (videoRef.current && !videoRef.current.paused) setShowControls(false)
+                    }, 4000)
+                 }
+                 return nextState;
+               });
                return;
              }
-             togglePlay(e);
+             
+             // PC Click Debounce
+             if (clickTimeoutRef.current) {
+                clearTimeout(clickTimeoutRef.current)
+                clickTimeoutRef.current = null
+             } else {
+                clickTimeoutRef.current = setTimeout(() => {
+                   togglePlay(e)
+                   clickTimeoutRef.current = null
+                }, 200)
+             }
            }}
-           onDoubleClick={toggleFullscreen}
-           className={`relative flex items-center justify-center bg-black shrink-0 ${
-             (isFullscreen || isWebFullscreen) ? 'fixed inset-0 z-[100] w-full h-[100dvh]' : 'aspect-video lg:max-h-[75vh] w-full'
+           onDoubleClick={(e) => {
+             if (clickTimeoutRef.current) {
+                clearTimeout(clickTimeoutRef.current)
+                clickTimeoutRef.current = null
+             }
+             toggleFullscreen(e)
+           }}
+           className={`relative flex items-center justify-center bg-black shrink-0 transition-opacity duration-300 ${
+             (isFullscreen || isWebFullscreen) ? 'fixed inset-0 z-[100] w-full h-[100dvh]' : (isVerticalVideo ? 'w-full aspect-[3/4] max-h-[55vh] sm:max-h-[70vh]' : 'aspect-video lg:max-h-[75vh] w-full')
            }`}
          >
            {/* Gesture Overlay (Touch only) */}
@@ -1253,6 +1305,8 @@ function PlayerContent() {
              className="w-full h-full max-h-full object-contain"
              playsInline
              autoPlay
+             onWaiting={() => setIsBuffering(true)}
+             onPlaying={() => { setIsBuffering(false); setIsPlaying(true); }}
              onPlay={() => setIsPlaying(true)}
              onPause={() => setIsPlaying(false)}
              onTimeUpdate={() => {
@@ -1275,6 +1329,10 @@ function PlayerContent() {
                 const dur = videoRef.current?.duration || 0
                 setDuration(dur)
                 lastDurRef.current = dur
+
+                if (videoRef.current) {
+                   setIsVerticalVideo(videoRef.current.videoHeight > videoRef.current.videoWidth)
+                }
 
                 const hist = useAppStore.getState().historyData.find(v => String(v.videoId) === String(id) && String(v._sourceId) === String(sourceId))
                 if (hist && hist.epUrl === rawUrl && hist.currentTime && hist.currentTime > 0) {
@@ -1302,6 +1360,16 @@ function PlayerContent() {
                <div className="text-xs text-center font-normal text-gray-300 mt-1">
                  {formatTime(Math.max(0, Math.min(duration, (touchStartRef.current?.startSeek || 0) + seekingDelta)))}
                </div>
+             </div>
+           )}
+
+           {/* Buffering Indicator */}
+           {isBuffering && (
+             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20 bg-black/10 backdrop-blur-[2px]">
+                <svg className="animate-spin h-12 w-12 text-white drop-shadow-lg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
              </div>
            )}
 
