@@ -14,7 +14,11 @@ import {
   ArrowsPointingInIcon, 
   ForwardIcon,
   BackwardIcon,
-  SunIcon
+  SunIcon,
+  LockClosedIcon,
+  LockOpenIcon,
+  ListBulletIcon,
+  XMarkIcon
 } from '@heroicons/react/24/outline'
 import { HeartIcon as HeartSolid } from '@heroicons/react/24/solid'
 import { useAppStore } from '@/store/useAppStore'
@@ -80,9 +84,8 @@ function PlayerContent() {
   const [altSources, setAltSources] = useState<any[]>([])
   const [showAltSources, setShowAltSources] = useState(false)
   const [showSkipConfig, setShowSkipConfig] = useState(false)
-  
-  const [introSkip, setIntroSkip] = useState(0)
-  const [outroSkip, setOutroSkip] = useState(0)
+  const [introSkip, setIntroSkip] = useState<number | string>(0)
+  const [outroSkip, setOutroSkip] = useState<number | string>(0)
   const hasSkippedIntro = useRef(false)
   const hasSkippedOutro = useRef(false)
 
@@ -240,6 +243,10 @@ function PlayerContent() {
   const [isPortrait, setIsPortrait] = useState(true)
   const [volumeDelta, setVolumeDelta] = useState<number | null>(null)
   const [brightnessDelta, setBrightnessDelta] = useState<number | null>(null)
+  const [isLocked, setIsLocked] = useState(false)
+  const [showMobileEpisodes, setShowMobileEpisodes] = useState(false)
+
+  const isAnyFullscreen = isFullscreen || isWebFullscreen || isManualWebFullscreen;
 
   const lastTimeRef = useRef(0)
   const lastDurRef = useRef(0)
@@ -604,10 +611,11 @@ function PlayerContent() {
   // Scroll active episode into view
   const activeEpRef = useRef<HTMLButtonElement>(null)
   useEffect(() => {
+    if (isAnyFullscreen) return; // Prevent iOS fullscreen scroll-anchor visual glitch
     if (activeEpRef.current) {
         activeEpRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
     }
-  }, [rawUrl, epName, episodes])
+  }, [rawUrl, epName, episodes, isAnyFullscreen])
 
   // Find next episode
   const currentIndex = episodes.findIndex(ep => ep.url === rawUrl || ep.name === epName)
@@ -795,6 +803,7 @@ function PlayerContent() {
 
   // Touch Gesture Handlers
   const handleTouchStart = (e: React.TouchEvent) => {
+    if (isLocked) return
     if (e.touches.length !== 1) return
     const touch = e.touches[0]
     touchStartRef.current = {
@@ -809,6 +818,7 @@ function PlayerContent() {
   }
 
   const handleTouchMove = (e: React.TouchEvent) => {
+    if (isLocked) return
     if (!touchStartRef.current || !videoRef.current) return
     
     const touch = e.touches[0]
@@ -867,6 +877,7 @@ function PlayerContent() {
   }
 
   const handleTouchEnd = (e: React.TouchEvent) => {
+    if (isLocked) return
     if (!touchStartRef.current) return
     
     if (touchStartRef.current.type === 'seek' && seekingDelta !== null && videoRef.current) {
@@ -1258,8 +1269,6 @@ function PlayerContent() {
        }).catch(() => {});
   }, [targetName, isSpeedTestQuery, altSources.length, currentMode]);
 
-  const isAnyFullscreen = isFullscreen || isWebFullscreen || isManualWebFullscreen;
-
   return (
     <div className={`fixed inset-y-0 right-0 left-0 md:left-64 bg-[var(--background)] dark:bg-[#1c1c1e] flex flex-col h-[100dvh] overflow-hidden ${isAnyFullscreen ? 'z-[60]' : 'z-40'}`}>
        {/* Error Overlay */}
@@ -1332,6 +1341,8 @@ function PlayerContent() {
              }
              
              // PC Click Debounce
+             if (isLocked) return;
+             
              if (clickTimeoutRef.current) {
                 clearTimeout(clickTimeoutRef.current)
                 clickTimeoutRef.current = null
@@ -1343,6 +1354,9 @@ function PlayerContent() {
              }
            }}
            onDoubleClick={(e) => {
+             if (isLocked) return;
+             if (typeof window !== 'undefined' && window.innerWidth < 1024) return;
+             
              if (clickTimeoutRef.current) {
                 clearTimeout(clickTimeoutRef.current)
                 clickTimeoutRef.current = null
@@ -1372,6 +1386,86 @@ function PlayerContent() {
              onTouchEnd={handleTouchEnd}
            />
 
+           {/* Mobile Handlers & Overlays */}
+           {/* Lock Button (Mobile Fullscreen Only) */}
+           {isAnyFullscreen && (
+             <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-[60] lg:hidden transition-opacity duration-300 ${showControls || isLocked ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+               <button 
+                 onClick={(e) => { e.stopPropagation(); setIsLocked(!isLocked); setShowControls(true); }}
+                 className="p-3 bg-black/50 hover:bg-black/70 rounded-full backdrop-blur-md text-white/80 hover:text-white transition-all pointer-events-auto shadow-xl border border-white/5"
+               >
+                 {isLocked ? <LockClosedIcon className="w-6 h-6" /> : <LockOpenIcon className="w-6 h-6" />}
+               </button>
+             </div>
+           )}
+
+           {/* Mobile Fullscreen Top Header */}
+           {isAnyFullscreen && (
+             <div className={`absolute top-0 left-0 right-0 px-4 pt-4 pb-12 bg-gradient-to-b from-black/80 to-transparent z-50 transition-opacity duration-300 pointer-events-none lg:hidden flex justify-between items-start ${showControls && !isLocked ? 'opacity-100' : 'opacity-0'}`}>
+               <div className="flex items-center gap-3 pointer-events-auto">
+                  <button onClick={(e) => { e.stopPropagation(); toggleFullscreen(e); }} className="p-2 -ml-2 text-white/90 hover:text-white hover:bg-white/20 rounded-full transition-colors drop-shadow">
+                     <ArrowLeftIcon className="w-6 h-6" />
+                  </button>
+                  <div className="flex flex-col">
+                     <span className="text-white font-bold text-sm line-clamp-1 max-w-[200px] drop-shadow-md">{video?.vod_name}</span>
+                     <span className="text-gray-300 text-xs font-mono drop-shadow-md">{epName}</span>
+                  </div>
+               </div>
+
+               {episodes.length > 1 && (
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setShowMobileEpisodes(!showMobileEpisodes); setShowControls(false); }} 
+                    className="p-1.5 -mr-2 text-white/90 hover:text-white hover:bg-white/20 rounded-full transition-colors pointer-events-auto flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3 border border-white/10"
+                  >
+                     <span className="text-[11px] font-bold tracking-wider drop-shadow">选集</span>
+                     <ListBulletIcon className="w-4 h-4 drop-shadow" />
+                  </button>
+               )}
+             </div>
+           )}
+
+           {/* Mobile Episode Drawer (Fullscreen Only) */}
+           {isAnyFullscreen && showMobileEpisodes && (
+             <div 
+               onClick={(e) => { e.stopPropagation(); setShowMobileEpisodes(false); }}
+               className="absolute inset-x-0 inset-y-0 z-[70] bg-black/60 backdrop-blur-sm lg:hidden flex justify-end transition-opacity"
+             >
+               <div 
+                 onClick={(e) => e.stopPropagation()} 
+                 className="w-6/12 min-w-[200px] max-w-xs h-full bg-[#1c1c1e]/95 border-l border-white/10 shadow-2xl flex flex-col pointer-events-auto"
+               >
+                 <div className="p-4 border-b border-white/10 flex justify-between items-center shrink-0">
+                    <span className="text-white font-bold">选集 ({episodes.length})</span>
+                    <button onClick={() => setShowMobileEpisodes(false)} className="p-1 -mr-1 hover:bg-white/10 rounded-full text-white">
+                       <XMarkIcon className="w-6 h-6" />
+                    </button>
+                 </div>
+                 <div className="flex-1 overflow-y-auto p-4 custom-scrollbar grid grid-cols-2 gap-2 content-start">
+                    {episodes.map((ep, idx) => {
+                       const isActive = ep.name === epName || (video && ep.name === video.vod_play_list[0]?.urls[currentIndex]?.name);
+                       return (
+                         <button
+                           key={idx}
+                           onClick={(e) => {
+                              e.stopPropagation()
+                              setShowMobileEpisodes(false)
+                              router.replace(`/play?sourceId=${sourceId}&id=${id}&epName=${encodeURIComponent(ep.name)}&epUrl=${encodeURIComponent(ep.url)}`)
+                           }}
+                           className={`py-3 px-2 rounded-lg text-xs font-medium text-center truncate transition-all ${
+                             isActive 
+                               ? 'bg-blue-600 text-white shadow-md shadow-blue-500/20' 
+                               : 'bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white'
+                           }`}
+                         >
+                            {ep.name}
+                         </button>
+                       )
+                    })}
+                 </div>
+               </div>
+             </div>
+           )}
+
            <video 
              ref={videoRef}
              controls={false}
@@ -1387,12 +1481,12 @@ function PlayerContent() {
                 setCurrentTime(ct)
                 lastTimeRef.current = ct
                 
-                if (introSkip > 0 && ct < introSkip && !hasSkippedIntro.current) {
-                   videoRef.current!.currentTime = introSkip
+                if (Number(introSkip) > 0 && ct < Number(introSkip) && !hasSkippedIntro.current) {
+                   videoRef.current!.currentTime = Number(introSkip)
                    hasSkippedIntro.current = true
                 }
                 const currentDur = videoRef.current?.duration || duration
-                if (outroSkip > 0 && currentDur > 0 && ct > (currentDur - outroSkip) && !hasSkippedOutro.current) {
+                if (Number(outroSkip) > 0 && currentDur > 0 && ct > (currentDur - Number(outroSkip)) && !hasSkippedOutro.current) {
                    hasSkippedOutro.current = true
                    handleNext()
                 }
@@ -1475,7 +1569,7 @@ function PlayerContent() {
            )}
 
            {/* Controls Bottom Bar */}
-           <div onClick={e => e.stopPropagation()} className={`absolute bottom-0 left-0 right-0 px-4 pb-4 pt-16 bg-gradient-to-t from-black/90 to-transparent z-40 transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0'} flex flex-col pointer-events-none`}>
+           <div {...(isLocked ? { inert: true } : {})} onClick={e => e.stopPropagation()} className={`absolute bottom-0 left-0 right-0 px-4 pb-4 pt-16 bg-gradient-to-t from-black/90 to-transparent z-40 transition-opacity duration-300 ${showControls && !isLocked ? 'opacity-100' : 'opacity-0'} flex flex-col pointer-events-none`}>
              <div className="w-full h-1.5 bg-white/30 rounded-full mb-4 cursor-pointer relative group/progress pointer-events-auto">
                <input 
                   type="range" min={0} max={duration || 100} value={currentTime} 
@@ -1516,14 +1610,14 @@ function PlayerContent() {
 
                <div className="flex items-center">
                   <button onClick={toggleFullscreen} className="text-white hover:text-blue-400 transition transform hover:scale-110">
-                     {isFullscreen ? <ArrowsPointingInIcon className="w-6 h-6" /> : <ArrowsPointingOutIcon className="w-6 h-6" />}
+                     {isAnyFullscreen ? <ArrowsPointingInIcon className="w-6 h-6" /> : <ArrowsPointingOutIcon className="w-6 h-6" />}
                   </button>
                </div>
              </div>
            </div>
            
            {/* Big Play Button Overlay for Mobile Taps and Paused State */}
-           {!isPlaying && (
+           {!isPlaying && !isLocked && (
              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
                 <div onClick={togglePlay} className="bg-black/50 p-4 rounded-full backdrop-blur-sm pointer-events-auto cursor-pointer transition transform hover:scale-110">
                   <PlayIcon className="w-12 h-12 text-white/90 translate-x-1" />
@@ -1533,7 +1627,7 @@ function PlayerContent() {
          </div>
 
          {/* Episodes Section */}
-         <div className={`w-full bg-[var(--background)] dark:bg-[#1c1c1e] flex flex-col z-10 overflow-visible pb-16 lg:pb-32 flex`}>
+         <div className={`w-full bg-[var(--background)] dark:bg-[#1c1c1e] flex-col z-10 overflow-visible pb-16 lg:pb-32 ${isAnyFullscreen ? 'hidden' : 'flex'}`}>
             {true ? (
                <>
                  <div className="flex items-center justify-between p-4 md:px-8 min-h-[60px] border-b border-black/10 dark:border-white/10 shrink-0 bg-transparent gap-y-2 flex-wrap">
@@ -1562,7 +1656,7 @@ function PlayerContent() {
                          onClick={() => { setShowSkipConfig(!showSkipConfig); setShowAltSources(false); }} 
                          className={`text-[11px] font-bold px-2.5 py-1 rounded-full shadow-sm transition-all ${
                              showSkipConfig ? 'bg-gray-100 text-gray-600 dark:bg-black/40 dark:text-gray-300 dark:border-white/5 border border-transparent' 
-                             : (introSkip > 0 || outroSkip > 0) ? 'text-white bg-blue-500 dark:bg-blue-600 hover:opacity-90'
+                             : (Number(introSkip) > 0 || Number(outroSkip) > 0) ? 'text-white bg-blue-500 dark:bg-blue-600 hover:opacity-90'
                              : 'text-gray-600 bg-gray-200 dark:bg-[#2c2c2e] dark:border dark:border-white/5 dark:text-gray-300 hover:opacity-90'
                          }`}
                      >
@@ -1583,11 +1677,11 @@ function PlayerContent() {
                      <div className="flex flex-col space-y-5 max-w-sm">
                         <div className="flex flex-col space-y-2">
                            <label className="text-sm font-bold text-gray-700 dark:text-gray-300">跳过片头 (秒)</label>
-                           <input type="number" min="0" value={introSkip} onChange={e => setIntroSkip(Number(e.target.value))} className="w-full bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow" placeholder="例如: 90" />
+                           <input type="number" min="0" value={introSkip} onChange={e => setIntroSkip(e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow" placeholder="例如: 90" />
                         </div>
                         <div className="flex flex-col space-y-2">
                            <label className="text-sm font-bold text-gray-700 dark:text-gray-300">跳过片尾 (秒)</label>
-                           <input type="number" min="0" value={outroSkip} onChange={e => setOutroSkip(Number(e.target.value))} className="w-full bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow" placeholder="例如: 120" />
+                           <input type="number" min="0" value={outroSkip} onChange={e => setOutroSkip(e.target.value === '' ? '' : Number(e.target.value))} className="w-full bg-white dark:bg-[#1c1c1e] border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-shadow" placeholder="例如: 120" />
                         </div>
                         <div className="flex space-x-3 pt-2">
                            <button onClick={() => {
