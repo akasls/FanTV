@@ -177,7 +177,7 @@ function PlayerContent() {
                                  if (done) break;
                                  if (value) receivedLength += value.length;
                                  
-                                 if (receivedLength > 200 * 1024) {
+                                 if (receivedLength > 512 * 1024) {
                                      reader.cancel().catch(() => {});
                                      break;
                                  }
@@ -275,12 +275,41 @@ function PlayerContent() {
   const shouldSimulateLandscape = Boolean(isManualWebFullscreen && isPortrait && !isVerticalVideo)
 
   useEffect(() => {
+    let originalThemeColor = '';
+    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+    if (metaThemeColor) {
+      originalThemeColor = metaThemeColor.getAttribute('content') || '';
+    }
+
     if (isFullscreen || isWebFullscreen || isManualWebFullscreen) {
       document.body.style.overflow = 'hidden'
+      if (metaThemeColor) {
+        metaThemeColor.setAttribute('content', '#000000');
+      } else {
+        const meta = document.createElement('meta');
+        meta.name = 'theme-color';
+        meta.content = '#000000';
+        meta.id = 'temp-theme-color';
+        document.head.appendChild(meta);
+      }
     } else {
       document.body.style.overflow = ''
+      if (metaThemeColor && originalThemeColor) {
+        metaThemeColor.setAttribute('content', originalThemeColor);
+      } else {
+        const tempMeta = document.getElementById('temp-theme-color');
+        if (tempMeta) tempMeta.remove();
+      }
     }
-    return () => { document.body.style.overflow = '' }
+    return () => { 
+       document.body.style.overflow = '';
+       if (metaThemeColor && originalThemeColor) {
+         metaThemeColor.setAttribute('content', originalThemeColor);
+       } else {
+         const tempMeta = document.getElementById('temp-theme-color');
+         if (tempMeta) tempMeta.remove();
+       }
+    }
   }, [isFullscreen, isWebFullscreen, isManualWebFullscreen])
 
   // Save history periodically & on unmount
@@ -1069,7 +1098,7 @@ function PlayerContent() {
 
               const startInit = performance.now();
               const controller = new AbortController();
-              const timeout = setTimeout(() => controller.abort(), 4000); 
+              const timeout = setTimeout(() => controller.abort(), 8000); 
 
               let speedScore = -50000;
 
@@ -1131,7 +1160,7 @@ function PlayerContent() {
                       const { done, value } = await reader.read();
                       if (done) break;
                       if (value) receivedLength += value.length;
-                      if (receivedLength > 100 * 1024) {
+                      if (receivedLength > 512 * 1024) {
                         reader.cancel().catch(() => {});
                         break;
                       }
@@ -1577,7 +1606,6 @@ function PlayerContent() {
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                />
                <div className="absolute top-0 left-0 bottom-0 bg-blue-500 rounded-full pointer-events-none" style={{ width: `${Math.min(100, (currentTime/(duration||1))*100)}%` }}></div>
-               <div className="absolute top-1/2 -mt-1.5 w-3 h-3 bg-white rounded-full shadow transition-transform scale-0 group-hover/progress:scale-100 pointer-events-none" style={{ left: `${Math.min(100, (currentTime/(duration||1))*100)}%`, transform: 'translate(-50%, -50%)' }}></div>
              </div>
 
              <div className="flex items-center justify-between pointer-events-auto">
@@ -1705,9 +1733,6 @@ function PlayerContent() {
                               <div className="flex items-center">
                                  <span className="font-bold text-blue-600 dark:text-blue-400 mr-2">{video?._sourceName}</span>
                                  <span className="text-[10px] font-medium bg-blue-500 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">当前源</span>
-                                 {bestSourceId === sourceId && (
-                                   <span className="ml-2 text-[10px] font-medium bg-orange-500 text-white px-1.5 py-0.5 rounded-full flex-shrink-0 shadow-sm animate-pulse">极速推荐</span>
-                                 )}
                               </div>
                               <span className={`text-[10px] flex-shrink-0 ml-2 px-1.5 py-0.5 rounded font-mono transition-colors ${!pingResults[sourceId!] ? 'bg-blue-100 text-blue-400 dark:bg-blue-900/30 dark:text-blue-600' : pingResults[sourceId!].ping === -1 ? 'bg-red-100 text-red-500 dark:bg-red-900/30' : pingResults[sourceId!].ping < 500 ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30' : 'bg-orange-100 text-orange-600 dark:bg-orange-900/30'}`}>
                                  {!pingResults[sourceId!] ? '测速中...' : pingResults[sourceId!].ping === -1 ? '超时' : `${pingResults[sourceId!].ping}ms${pingResults[sourceId!].speed ? ` | ${formatSpeed(pingResults[sourceId!].speed)}` : ''}`}
@@ -1728,9 +1753,6 @@ function PlayerContent() {
                              <div className="flex items-center justify-between w-full mb-1.5 relative z-10">
                                 <div className="flex items-center">
                                    <span className="font-bold text-gray-800 dark:text-gray-200 group-hover:text-orange-500 transition-colors truncate pr-2">{alt._sourceName}</span>
-                                   {bestSourceId === alt._sourceId && (
-                                      <span className="text-[10px] font-medium bg-orange-500 text-white px-1.5 py-0.5 rounded-full flex-shrink-0 shadow-sm animate-pulse">极速推荐</span>
-                                   )}
                                 </div>
                                 <span className={`text-[10px] flex-shrink-0 ml-2 px-1.5 py-0.5 rounded font-mono transition-colors ${!pingResults[alt._sourceId] ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500' : pingResults[alt._sourceId].ping === -1 ? 'bg-red-100 text-red-500 dark:bg-red-900/30' : pingResults[alt._sourceId].ping < 500 ? 'bg-green-100 text-green-600 dark:bg-green-900/30' : 'bg-orange-100 text-orange-600 dark:bg-orange-900/30'}`}>
                                    {!pingResults[alt._sourceId] ? '测速中...' : pingResults[alt._sourceId].ping === -1 ? '超时' : `${pingResults[alt._sourceId].ping}ms${pingResults[alt._sourceId].speed ? ` | ${formatSpeed(pingResults[alt._sourceId].speed)}` : ''}`}

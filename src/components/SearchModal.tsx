@@ -40,11 +40,13 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const hasDragged = useRef(false);
   const [startX, setStartX] = useState(0);
   const [scrollLeft, setScrollLeft] = useState(0);
 
   const startDrag = (e: React.MouseEvent<HTMLDivElement>) => {
     setIsDragging(true);
+    hasDragged.current = false;
     setStartX(e.pageX - (scrollRef.current?.offsetLeft || 0));
     setScrollLeft(scrollRef.current?.scrollLeft || 0);
   };
@@ -58,6 +60,9 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
     e.preventDefault();
     const x = e.pageX - (scrollRef.current?.offsetLeft || 0);
     const walk = (x - startX) * 2; 
+    if (Math.abs(walk) > 5) {
+      hasDragged.current = true;
+    }
     if (scrollRef.current) {
       scrollRef.current.scrollLeft = scrollLeft - walk;
     }
@@ -66,18 +71,19 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
   useEffect(() => {
     if (isOpen) {
       setInputVal("");
-      fetch(`/api/sources?mode=${currentMode}`)
-        .then((r) => r.json())
-        .then((data) => {
-          if (Array.isArray(data)) {
-            const active = data.filter(
-              (s: any) => !userDisabledSources.includes(s.id) && s.isActive !== false,
-            );
-            setSources(active);
-            // Default behavior handles fallback safely without resetting user persist preference 
-          }
-        })
-        .catch(console.error);
+      if (sources.length === 0) {
+        fetch(`/api/sources?mode=${currentMode}`)
+          .then((r) => r.json())
+          .then((data) => {
+            if (Array.isArray(data)) {
+              const active = data.filter(
+                (s: any) => !userDisabledSources.includes(s.id) && s.isActive !== false,
+              );
+              setSources(active);
+            }
+          })
+          .catch(console.error);
+      }
     }
   }, [isOpen, currentMode, userDisabledSources]);
 
@@ -153,16 +159,28 @@ export default function SearchModal({ isOpen, onClose }: SearchModalProps) {
               className={`flex overflow-x-auto whitespace-nowrap custom-scrollbar gap-3 pb-2 pt-1 -mx-2 px-2 select-none ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
             >
               <button
-                onClick={() => setTargetSearchSource("all")}
-                className={`flex-shrink-0 px-5 py-2 rounded-full text-[13px] font-bold transition-all duration-300 ${isDragging ? 'pointer-events-none' : ''} ${targetSearchSource === "all" ? "bg-black text-white dark:bg-white dark:text-black shadow-md scale-105" : "bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-black/10 dark:hover:bg-white/20"}`}
+                onClick={(e) => {
+                  if (hasDragged.current) {
+                    e.stopPropagation();
+                    return;
+                  }
+                  setTargetSearchSource("all");
+                }}
+                className={`flex-shrink-0 px-5 py-2 rounded-full text-[13px] font-bold transition-all duration-300 ${targetSearchSource === "all" ? "bg-black text-white dark:bg-white dark:text-black shadow-md scale-105" : "bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-black/10 dark:hover:bg-white/20"}`}
               >
                 所有源
               </button>
               {sources.map((s) => (
                 <button
                   key={s.id}
-                  onClick={() => setTargetSearchSource(s.id)}
-                  className={`flex-shrink-0 px-5 py-2 rounded-full text-[13px] font-bold transition-all duration-300 ${isDragging ? 'pointer-events-none' : ''} ${targetSearchSource === s.id ? "bg-black text-white dark:bg-white dark:text-black shadow-md scale-105" : "bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-black/10 dark:hover:bg-white/20"}`}
+                  onClick={(e) => {
+                    if (hasDragged.current) {
+                      e.stopPropagation();
+                      return;
+                    }
+                    setTargetSearchSource(s.id);
+                  }}
+                  className={`flex-shrink-0 px-5 py-2 rounded-full text-[13px] font-bold transition-all duration-300 ${targetSearchSource === s.id ? "bg-black text-white dark:bg-white dark:text-black shadow-md scale-105" : "bg-black/5 dark:bg-white/10 text-gray-700 dark:text-gray-300 hover:bg-black/10 dark:hover:bg-white/20"}`}
                 >
                   {s.name}
                 </button>

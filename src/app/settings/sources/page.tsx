@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useAppStore } from '@/store/useAppStore'
-import { ArrowLeftIcon, PlusIcon, TrashIcon, PencilIcon, ChevronUpIcon, ChevronDownIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, EyeIcon, EyeSlashIcon } from '@heroicons/react/24/outline'
+import { ArrowLeftIcon, PlusIcon, TrashIcon, PencilIcon, ChevronUpIcon, ChevronDownIcon, ArrowDownTrayIcon, ArrowUpTrayIcon, EyeIcon, EyeSlashIcon, BoltIcon } from '@heroicons/react/24/outline'
 import Link from 'next/link'
 
 interface Source {
@@ -52,6 +52,103 @@ export default function SourcesManager() {
       setSources(rawSources)
     }
     setLoading(false)
+  }
+
+  const [isSpeedTestingAll, setIsSpeedTestingAll] = useState(false)
+  const [testingSourceId, setTestingSourceId] = useState<string | null>(null)
+
+  const handleSpeedTestAndSort = async () => {
+    if (isSpeedTestingAll) return;
+    if (!confirm('这将会自动拉取所有站点的影片进行速度测试并重新排序。确认继续吗？')) return;
+    
+    setIsSpeedTestingAll(true);
+    
+    try {
+      const currentSources = [...sources];
+      const results: {src: Source, score: number}[] = [];
+      const getBestM3u8List = (vodPlayFrom?: string, vodPlayUrl?: string): string | null => {
+        if (!vodPlayUrl) return null;
+        const froms = vodPlayFrom ? vodPlayFrom.split("$$$") : [];
+        const urls = vodPlayUrl.split("$$$");
+        for (let i = 0; i < froms.length; i++) {
+          if (froms[i].toLowerCase().includes("m3u8")) {
+            if (urls[i]) return urls[i];
+          }
+        }
+        for (let i = 0; i < urls.length; i++) {
+          if (urls[i] && urls[i].includes(".m3u8")) return urls[i];
+        }
+        return urls.length > 0 ? urls[0] : null;
+      };
+
+      for (const src of currentSources) {
+         if (!src.isActive) {
+            results.push({ src, score: -99999 });
+            continue;
+         }
+         
+         setTestingSourceId(src.id);
+         
+         try {
+            const vRes = await fetch(`/api/videos?sourceId=${src.id}&pg=1`);
+            const vData = await vRes.json();
+            const firstVideo = vData.list?.[0];
+            if (!firstVideo || (!firstVideo.vod_play_url && !firstVideo.vod_pic)) {
+               results.push({ src, score: -99998 });
+               continue;
+            }
+
+            let urlToTest = '';
+            if (firstVideo.vod_play_url) {
+               const playSync = getBestM3u8List(firstVideo.vod_play_from, firstVideo.vod_play_url);
+               if (playSync) {
+                  const firstEp = playSync.split("#")[0].split("$");
+                  if (firstEp[1]) urlToTest = firstEp[1];
+               }
+            } else if (firstVideo.vod_pic) {
+               urlToTest = firstVideo.vod_pic;
+            }
+            
+            if (!urlToTest) {
+               results.push({ src, score: -99998 });
+               continue;
+            }
+
+            const startInit = performance.now();
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 4000); 
+            
+            await fetch(urlToTest, { method: "HEAD", mode: "no-cors", signal: controller.signal }).catch(() => null);
+            clearTimeout(timeout);
+            const latency = Math.round(performance.now() - startInit);
+            results.push({ src, score: -latency });
+
+         } catch(e) {
+            results.push({ src, score: -99999 });
+         }
+      }
+
+      results.sort((a, b) => b.score - a.score);
+      const sortedSources = results.map(r => r.src);
+      
+      setSources(sortedSources);
+      if (!isAdmin) {
+        useAppStore.getState().setUserSourceOrder(sortedSources.map(s => s.id));
+      } else {
+        sortedSources.forEach((s, idx) => s.order = idx + 1);
+        await Promise.all(
+          sortedSources.map(s => fetch('/api/sources', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id: s.id, order: s.order })
+          }))
+        );
+      }
+      alert('测速排序完成!');
+    } finally {
+      setIsSpeedTestingAll(false);
+      setTestingSourceId(null);
+    }
   }
 
   const handleSaveDramaUrl = async () => {
@@ -266,6 +363,14 @@ export default function SourcesManager() {
         <div className="flex items-center space-x-3 md:space-x-4">
           {isAdmin && (
             <>
+              <button 
+                onClick={handleSpeedTestAndSort} 
+                disabled={isSpeedTestingAll}
+                title="一键测速排序"
+                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400 disabled:opacity-50"
+               >
+                <BoltIcon className={`w-5 h-5 ${isSpeedTestingAll ? 'animate-pulse text-blue-500' : ''}`} />
+              </button>
               <input type="file" id="import-json" accept=".json" className="hidden" onChange={handleImportFile} />
               <button 
                 onClick={() => document.getElementById('import-json')?.click()} 
@@ -390,6 +495,7 @@ export default function SourcesManager() {
               <div className="flex flex-col flex-1 overflow-hidden mr-4">
                 <span className={`font-medium flex items-center space-x-2 ${userDisabledSources.includes(src.id) || !src.isActive ? 'opacity-40 line-through text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}>
                   <span>{src.name} {!src.isActive && !src.name.includes('(无法提取m3u8地址)') ? ' (全域禁用)' : ''}</span>
+                  {testingSourceId === src.id && <span className="text-[10px] text-blue-500 animate-pulse bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded">测速中</span>}
                   <span className={`text-[10px] px-2 py-0.5 rounded-full border ${src.mode === 'Adult' ? 'border-red-500 bg-red-50 text-red-600 dark:bg-red-500/10' : 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-500/10'}`}>
                     {src.mode === 'Adult' ? '圣贤' : '普通'}
                   </span>
