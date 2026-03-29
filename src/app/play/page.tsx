@@ -382,6 +382,7 @@ function PlayerContent() {
               const { historyData, setHistoryData, currentMode } = useAppStore.getState()
               const exists = historyData.find(h => h.videoId === String(id) && h._sourceId === sourceId)
               if (!exists) {
+                  const prevRecord = historyData.find(h => String(h.videoId) === String(id))
                   setHistoryData([{
                       videoId: String(id),
                       videoName: data.video.vod_name,
@@ -389,10 +390,10 @@ function PlayerContent() {
                       mode: currentMode,
                       _sourceId: sourceId,
                       _sourceName: data.video._sourceName || '',
-                      epName: '',
+                      epName: prevRecord ? prevRecord.epName : '',
                       epUrl: '',
-                      currentTime: 0,
-                      duration: 0
+                      currentTime: prevRecord ? prevRecord.currentTime : 0,
+                      duration: prevRecord ? prevRecord.duration : 0
                   }, ...historyData])
               }
 
@@ -1329,7 +1330,7 @@ function PlayerContent() {
   }, [targetName, isSpeedTestQuery, altSources.length, currentMode]);
 
   return (
-    <div className={`fixed inset-y-0 right-0 left-0 md:left-64 bg-[var(--background)] dark:bg-[#1c1c1e] flex flex-col h-[100dvh] overflow-hidden ${isAnyFullscreen ? 'z-[60]' : 'z-40'}`}>
+    <div className={`fixed inset-y-0 right-0 left-0 md:left-64 flex flex-col h-[100dvh] overflow-hidden ${isAnyFullscreen ? 'bg-[#000000] text-white z-[60]' : 'bg-[var(--background)] dark:bg-[#1c1c1e] z-40'}`}>
        {/* Error Overlay */}
        {speedTestError && (
          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-[var(--background)] dark:bg-[#1c1c1e]">
