@@ -8,6 +8,6 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./fantv.db:/app/fantv.db
+      - ./data:/app/data
     environment:
-      - DATABASE_URL=file:./fantv.db
+      - DATABASE_URL=file:./data/fantv.db

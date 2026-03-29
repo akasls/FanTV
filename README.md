@@ -34,10 +34,10 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      # 挂载 SQLite 数据库文件至宿主机防止容器销毁时数据回档
-      - ./fantv.db:/app/fantv.db
+      # 挂载 SQLite 数据库文件夹至宿主机，防止容器销毁时数据回档及 WAL 缓存丢失
+      - ./data:/app/data
     environment:
-      - DATABASE_URL=file:./fantv.db
+      - DATABASE_URL=file:./data/fantv.db
 ```
 
 在同级目录下执行启动指令一键拉起后端节点：
@@ -45,13 +45,16 @@ services:
 docker-compose up -d
 ```
 
+> ⚠️ **老用户升级必读（数据迁移）**：如果您以前使用的是单文件挂载（`- ./fantv.db:/app/fantv.db`），请在更新镜像前执行：`mkdir data && mv fantv.db data/`，然后修改您的 `docker-compose.yml` 按照上述格式挂载 `./data` 文件夹。这是为了保护 SQLite 的 `-wal` 事务缓存机制。
+
 如果您不想使用 Docker Compose，也可以直接通过 `docker run` 命令部署：
 ```bash
 docker run -d \
   --name fantv \
   --restart unless-stopped \
   -p 3000:3000 \
-  -v $(pwd)/fantv.db:/app/fantv.db \
+  -e DATABASE_URL="file:./data/fantv.db" \
+  -v $(pwd)/data:/app/data \
   ghcr.io/akasls/fantv:main
 ```
 
