@@ -64,7 +64,7 @@ export async function cleanM3u8(m3u8Url: string, proxyBaseUrl?: string): Promise
       } else {
         // Absolute URL mapping
         let absoluteUrl = line.startsWith('http') ? line : new URL(line, m3u8Url).href;
-        if (proxyBaseUrl) {
+        if (proxyBaseUrl && absoluteUrl.includes('.m3u8')) {
            absoluteUrl = `${proxyBaseUrl}${encodeURIComponent(absoluteUrl)}`;
         }
         resultLines.push(absoluteUrl);
