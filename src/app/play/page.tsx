@@ -536,12 +536,41 @@ function PlayerContent() {
       if (Hls.default.isSupported()) {
         
         // --- Frontend AdBlocker XHR Loader ---
-        // We use synchronous heuristics instead of physical video decoding to achieve 0ms ad blocking.
-        // The HTML5 physical decoding takes too long (seconds per ad block) causing Hls.js timeouts and lagging.
+        // We use a hybrid heuristic approach. Physical video decoding perfectly identifies ads mutating resolution (1920x800 -> 1920x1080), 
+        // but decoding heavily natively-partitioned streams (250+ disjoint blocks) creates 15-minute fatal timeouts.
+        const extractResolution = (tsUrl: string): Promise<string> => {
+           return new Promise((resolve) => {
+               const fakeM3u8 = `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.000,\n${tsUrl}\n#EXT-X-ENDLIST`;
+               const blob = new Blob([fakeM3u8], { type: 'application/vnd.apple.mpegurl' });
+               const blobUrl = URL.createObjectURL(blob);
+               const video = document.createElement('video');
+               video.muted = true; 
+               
+               const hlsProbe = new Hls.default({ enableWorker: false, debug: false });
+               const timeoutId = setTimeout(() => {
+                   hlsProbe.destroy(); URL.revokeObjectURL(blobUrl); resolve('TIMEOUT');
+               }, 2000);
+
+               video.addEventListener('loadedmetadata', () => {
+                   clearTimeout(timeoutId);
+                   const res = `${video.videoWidth}x${video.videoHeight}`;
+                   hlsProbe.destroy(); URL.revokeObjectURL(blobUrl); resolve(res);
+               });
+
+               hlsProbe.on(Hls.default.Events.ERROR, function (_: any, data: any) {
+                   if (data.fatal) {
+                       clearTimeout(timeoutId); hlsProbe.destroy(); URL.revokeObjectURL(blobUrl); resolve('ERROR');
+                   }
+               });
+               hlsProbe.loadSource(blobUrl);
+               hlsProbe.attachMedia(video);
+           });
+        };
+
         class AdBlockXhrLoader extends Hls.default.DefaultConfig.loader {
            load(context: any, config: any, callbacks: any) {
              const OriginalSuccess = callbacks.onSuccess;
-             callbacks.onSuccess = (response: any, stats: any, ctx: any) => {
+             callbacks.onSuccess = async (response: any, stats: any, ctx: any) => {
                if ((ctx.type === 'manifest' || ctx.type === 'level') && response.data) {
                   const text = response.data;
                   if (text.includes('#EXT-X-DISCONTINUITY')) {
@@ -579,8 +608,14 @@ function PlayerContent() {
                      for (const b of blocks) { if (b.dur > maxDur) { maxDur = b.dur; longestBlock = b; } }
                      
                      let refDomain = ''; let refPath = '';
+                     let mainRes: string | null = null;
+                     
                      if (longestBlock && longestBlock.firstTs) {
                         try { const u = new URL(longestBlock.firstTs); refDomain = u.host; refPath = u.pathname.substring(0, u.pathname.lastIndexOf('/')); } catch(e) {}
+                        // Execute gene baseline sniffing if the chunk partition count isn't overwhelmingly large (natively chopped streams)
+                        if (blocks.length <= 15) {
+                           mainRes = await extractResolution(longestBlock.firstTs);
+                        }
                      }
                      
                      for (const b of blocks) {
@@ -593,10 +628,18 @@ function PlayerContent() {
                            b.isAd = true; continue;
                         }
                         
-                        // Strict heuristic 2: Same-directory ad injection
-                        // Any disjoint block in the same directory shorter than 38 seconds is overwhelmingly likely to be an ad, PROVIDED the main movie is natively continuous (maxDur > 120).
-                        if (bHost === refDomain && b.dur < 38 && maxDur > 120) {
-                           b.isAd = true; continue;
+                        // Pure Domain Time-based evaluation falls back if native slicing is too deep to physically probe
+                        if (mainRes === null) {
+                           if (bHost === refDomain && b.dur < 38 && maxDur > 120) {
+                              b.isAd = true; continue;
+                           }
+                        } else {
+                           // Deep Physical Mutation Test if stream length aligns with AppleCMS typical behavior (<15 disruptions)
+                           if (bHost === refDomain && b.dur > 50) continue; // Large blocks are guaranteed native movie bodies
+                           const res = await extractResolution(b.firstTs);
+                           if (res !== mainRes || res === 'TIMEOUT' || res === 'ERROR') {
+                              b.isAd = true;
+                           }
                         }
                      }
                      
