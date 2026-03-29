@@ -612,11 +612,11 @@ function PlayerContent() {
                      
                      if (longestBlock && longestBlock.firstTs) {
                         try { const u = new URL(longestBlock.firstTs); refDomain = u.host; refPath = u.pathname.substring(0, u.pathname.lastIndexOf('/')); } catch(e) {}
-                        // Execute gene baseline sniffing if the chunk partition count isn't overwhelmingly large (natively chopped streams)
-                        if (blocks.length <= 15) {
-                           mainRes = await extractResolution(longestBlock.firstTs);
-                        }
+                        // Always grab mainRes baseline (it only costs 2s of blocking time)
+                        mainRes = await extractResolution(longestBlock.firstTs);
                      }
+                     
+                     const probeTasks: Promise<void>[] = [];
                      
                      for (const b of blocks) {
                         if (b === longestBlock || b.isAd || !b.firstTs) continue;
@@ -628,19 +628,32 @@ function PlayerContent() {
                            b.isAd = true; continue;
                         }
                         
-                        // Pure Domain Time-based evaluation falls back if native slicing is too deep to physically probe
-                        if (mainRes === null) {
-                           if (bHost === refDomain && b.dur < 38 && maxDur > 120) {
-                              b.isAd = true; continue;
-                           }
+                        // Physical Gene Sniffing Decision
+                        let shouldProbe = false;
+                        if (blocks.length <= 15) {
+                           if (b.dur < 50) shouldProbe = true;
                         } else {
-                           // Deep Physical Mutation Test if stream length aligns with AppleCMS typical behavior (<15 disruptions)
-                           if (bHost === refDomain && b.dur > 50) continue; // Large blocks are guaranteed native movie bodies
-                           const res = await extractResolution(b.firstTs);
-                           if (res !== mainRes || res === 'TIMEOUT' || res === 'ERROR') {
-                              b.isAd = true;
+                           // Heavily partitioned stream (>15 blocks). Limit probes to typical ad durations to prevent 15-minute timeouts.
+                           const isAdDur = [10, 15, 20, 30].some(d => Math.abs(b.dur - d) < 0.2);
+                           if (b.dur < 12 || isAdDur) {
+                               shouldProbe = true;
                            }
                         }
+                        
+                        if (shouldProbe) {
+                           probeTasks.push(
+                               extractResolution(b.firstTs).then(res => {
+                                   if (res !== mainRes || res === 'TIMEOUT' || res === 'ERROR') {
+                                       b.isAd = true;
+                                   }
+                               })
+                           );
+                        }
+                     }
+                     
+                     if (probeTasks.length > 0) {
+                         // Parallel execution guarantees maximum 3s penalty rather than sequential stacking
+                         await Promise.all(probeTasks);
                      }
                      
                      const resultLines = [...globals];
