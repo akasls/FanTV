@@ -12,8 +12,8 @@ export default function FavoritesPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const toggleSelection = (videoId: string, sourceId: string) => {
-    const key = `${sourceId}-${videoId}`;
+  const toggleSelection = (videoId: string) => {
+    const key = String(videoId);
     const newSet = new Set(selectedIds);
     if (newSet.has(key)) newSet.delete(key);
     else newSet.add(key);
@@ -22,9 +22,9 @@ export default function FavoritesPage() {
 
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return;
-    if (confirm(`确定要删除选中的 ${selectedIds.size} 条收藏吗？`)) {
+    if (confirm(`确定要删除选中的 ${selectedIds.size} 部影片关联的所有收藏记录吗？`)) {
       const newData = favoriteData.filter(
-        (v) => !selectedIds.has(`${v._sourceId}-${v.videoId}`),
+        (v) => !selectedIds.has(String(v.videoId)),
       );
       setFavoriteData(newData);
       setSelectedIds(new Set());
@@ -39,7 +39,15 @@ export default function FavoritesPage() {
         v.videoName?.toLowerCase().includes(search.toLowerCase()),
       );
     }
-    return data;
+    const uniqueData = [];
+    const seen = new Set();
+    for (const item of data) {
+       if (!seen.has(String(item.videoId))) {
+           seen.add(String(item.videoId));
+           uniqueData.push(item);
+       }
+    }
+    return uniqueData;
   }, [favoriteData, currentMode, search]);
 
   return (
@@ -115,30 +123,25 @@ export default function FavoritesPage() {
           {displayData.map((video, idx) => {
             const hist = historyData.find(
               (h) =>
-                h.videoId === String(video.videoId) &&
-                h._sourceId === video._sourceId,
+                h.videoId === String(video.videoId),
             );
             let playUrl = `/play?sourceId=${video._sourceId}&id=${video.videoId}`;
             if (hist && hist.epUrl) {
               playUrl += `&epName=${encodeURIComponent(hist.epName || "")}&epUrl=${encodeURIComponent(hist.epUrl)}`;
             }
 
-            const isSelected = selectedIds.has(
-              `${video._sourceId}-${video.videoId}`,
-            );
+            const isSelected = selectedIds.has(String(video.videoId));
 
             return (
               <button
                 onClick={() => {
-                  if (isEditing)
-                    toggleSelection(
-                      String(video.videoId),
-                      String(video._sourceId),
-                    );
-                  else
+                  if (isEditing) {
+                    toggleSelection(String(video.videoId));
+                  } else {
                     routeWithSpeedTest({ ...video, vod_name: video.videoName });
+                  }
                 }}
-                key={`${video._sourceId}-${video.videoId}-${idx}`}
+                key={`favorite-${video.videoId}-${idx}`}
                 className={`flex flex-col group cursor-pointer relative ${isEditing && isSelected ? "opacity-70 scale-[0.98]" : ""} transition-all outline-none`}
               >
                 {isEditing && (
