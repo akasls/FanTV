@@ -594,8 +594,8 @@ function PlayerContent() {
                         }
                         
                         // Strict heuristic 2: Same-directory ad injection
-                        // Any disjoint block in the same directory shorter than 38 seconds is overwhelmingly likely to be an ad.
-                        if (bHost === refDomain && b.dur < 38) {
+                        // Any disjoint block in the same directory shorter than 38 seconds is overwhelmingly likely to be an ad, PROVIDED the main movie is natively continuous (maxDur > 120).
+                        if (bHost === refDomain && b.dur < 38 && maxDur > 120) {
                            b.isAd = true; continue;
                         }
                      }

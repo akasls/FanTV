@@ -7,7 +7,7 @@ const m3u8Cache = new NodeCache({
 });
 
 export async function cleanM3u8(m3u8Url: string, proxyBaseUrl?: string): Promise<string> {
-  const cacheKey = `proxy_v3_${m3u8Url}`;
+  const cacheKey = `proxy_v4_${m3u8Url}`;
   const cached = m3u8Cache.get<string>(cacheKey);
   if (cached) {
     return cached;
@@ -55,11 +55,17 @@ export async function cleanM3u8(m3u8Url: string, proxyBaseUrl?: string): Promise
     }
 
     // 2. Parse and convert segments to absolute logic directly
-    for (const rawLine of lines) {
-      const line = rawLine.trim();
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i].trim();
       if (!line) continue;
 
       if (line.startsWith('#')) {
+        // Rewrite embedded URI="..." attributes inside tags like #EXT-X-KEY and #EXT-X-MAP
+        const uriMatch = line.match(/URI="([^"]+)"/);
+        if (uriMatch && uriMatch[1] && !uriMatch[1].startsWith('data:')) {
+           let absUri = uriMatch[1].startsWith('http') ? uriMatch[1] : new URL(uriMatch[1], m3u8Url).href;
+           line = line.replace(`URI="${uriMatch[1]}"`, `URI="${absUri}"`);
+        }
         resultLines.push(line);
       } else {
         // Absolute URL mapping
