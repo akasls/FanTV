@@ -203,6 +203,7 @@ export default function SourcesManager() {
           }))
         );
         useAppStore.getState().setUserSourceOrder([]);
+        fetchSources();
       }
       alert('测速排序完成!');
     } finally {
@@ -286,13 +287,22 @@ export default function SourcesManager() {
     fetchSources()
   }
 
-  const handleReorder = async (source: Source, direction: 'up'|'down', index: number) => {
-    if (direction === 'up' && index === 0) return
-    if (direction === 'down' && index === sources.length - 1) return
+  const handleReorder = async (source: Source, direction: 'up'|'down', rawIdxFallback: number) => {
+    // Determine the absolute index within the complete array
+    const index = sources.findIndex(s => s.id === source.id);
+    if (index === -1) return;
     
-    const targetIdx = direction === 'up' ? index - 1 : index + 1
+    // Find the adjacent neighbor correctly respecting current filter mode
+    const visibleSources = sources.filter(s => filterMode === 'All' || s.mode === filterMode);
+    const visibleIdx = visibleSources.findIndex(s => s.id === source.id);
+    if (direction === 'up' && visibleIdx === 0) return;
+    if (direction === 'down' && visibleIdx === visibleSources.length - 1) return;
     
-    // Swap linearly
+    const targetSource = direction === 'up' ? visibleSources[visibleIdx - 1] : visibleSources[visibleIdx + 1];
+    const targetIdx = sources.findIndex(s => s.id === targetSource.id);
+    if (targetIdx === -1) return;
+    
+    // Swap linearly in the absolute array
     const newSources = [...sources]
     const temp = newSources[index]
     newSources[index] = newSources[targetIdx]
@@ -317,6 +327,7 @@ export default function SourcesManager() {
       }))
     )
     setUserSourceOrder([]);
+    fetchSources();
   }
 
   const handleDelete = async (id: string, name: string) => {

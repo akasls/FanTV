@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
     setting = await prisma.systemSetting.create({
       data: {
         id: "global",
-        allowRegistration: true,
+        allowRegistration: false,
         allowGuestAccess: false,
         siteName: "FanTv",
         siteDescription: "A modern dual-mode video application.",
@@ -29,6 +29,8 @@ export async function GET(req: NextRequest) {
     removeTsAd: (setting as any).removeTsAd,
     shortDramaApiUrl: (setting as any).shortDramaApiUrl,
     shortDramaCategories: (setting as any).shortDramaCategories,
+    doubanDataProxy: (setting as any).doubanDataProxy,
+    doubanImageProxy: (setting as any).doubanImageProxy,
   };
 
   const token = req.cookies.get("fantv_token")?.value;

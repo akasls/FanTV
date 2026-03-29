@@ -18,7 +18,7 @@ export const viewport: Viewport = {
 }
 
 import prisma from '@/lib/prisma'
-
+export const dynamic = "force-dynamic";
 export async function generateMetadata(): Promise<Metadata> {
   let siteName = 'FanTv'
   let siteDescription = 'A modern dual-mode video application.'

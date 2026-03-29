@@ -222,11 +222,16 @@ export const useAppStore = create<AppState>()(
              if (data.user.speedTestPlayback !== null && data.user.speedTestPlayback !== undefined) {
                set({ speedTestPlayback: data.user.speedTestPlayback });
              }
-             if (data.user.doubanDataProxy !== null && data.user.doubanDataProxy !== undefined) {
+             if (data.user.doubanDataProxy) {
                set({ doubanDataProxy: data.user.doubanDataProxy });
+             } else if (data.config?.doubanDataProxy) {
+               set({ doubanDataProxy: data.config.doubanDataProxy });
              }
-             if (data.user.doubanImageProxy !== null && data.user.doubanImageProxy !== undefined) {
+             
+             if (data.user.doubanImageProxy) {
                set({ doubanImageProxy: data.user.doubanImageProxy });
+             } else if (data.config?.doubanImageProxy) {
+               set({ doubanImageProxy: data.config.doubanImageProxy });
              }
              if (data.user.sourceOrder) {
                try { 
