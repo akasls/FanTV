@@ -179,9 +179,9 @@ export async function cleanM3u8(m3u8Url: string, proxyBaseUrl?: string): Promise
            blockPath = u.pathname.substring(0, u.pathname.lastIndexOf('/'));
         } catch(e) {}
 
-        // Heuristic: If it has the same host, shares the directory path, OR is reasonably long, it's likely main content.
-        // This avoids spawning 100+ ffprobe processes for highly fragmented M3U8s.
-        if (blockHost === referenceDomain && (blockPath === referencePath || block.duration > 35)) {
+        // Heuristic: If it has the same host and is reasonably long (>35s), it's likely main content chunk.
+        // This avoids spawning 100+ ffprobe processes for highly fragmented M3U8s where movie chunks are ~60s.
+        if (blockHost === referenceDomain && block.duration > 35) {
            block.resolution = mainRes || 'ASSUMED_MAIN';
            return;
         }
@@ -202,10 +202,10 @@ export async function cleanM3u8(m3u8Url: string, proxyBaseUrl?: string): Promise
     await Promise.all(probePromises);
 
     // Identify blocks where we probe failed or resolution doesn't match
-    let finalBlocks = blocks;
+    let finalBlocks = blocks.filter(b => b.resolution !== 'AD_BLOCKED_BY_HEURISTIC');
     
     if (mainRes) {
-      finalBlocks = blocks.filter((block) => {
+      finalBlocks = finalBlocks.filter((block) => {
         if (block.resolution) {
            if (block.resolution === 'ASSUMED_MAIN') return true;
            return block.resolution === mainRes;
