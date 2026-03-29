@@ -804,12 +804,12 @@ function PlayerContent() {
       switch(e.key) {
         case 'ArrowRight':
           e.preventDefault()
-          videoRef.current.currentTime = Math.min(videoRef.current.duration, videoRef.current.currentTime + 10)
+          videoRef.current.currentTime = Math.min(videoRef.current.duration, videoRef.current.currentTime + 15)
           setShowControls(true)
           break
         case 'ArrowLeft':
           e.preventDefault()
-          videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 10)
+          videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 15)
           setShowControls(true)
           break
         case 'ArrowUp':
@@ -995,10 +995,18 @@ function PlayerContent() {
           touchStartRef.current.type = 'seek'
        } else if (absY > 20 && absY > absX) {
           const rect = playerContainerRef.current!.getBoundingClientRect()
-          const isLeftSide = shouldSimulateLandscape 
-             ? touchStartRef.current.y < rect.top + rect.height / 2
-             : touchStartRef.current.x < rect.left + rect.width / 2
-          touchStartRef.current.type = isLeftSide ? 'brightness' : 'volume'
+          const relativeX = shouldSimulateLandscape 
+             ? touchStartRef.current.y - rect.top 
+             : touchStartRef.current.x - rect.left;
+          const refWidth = shouldSimulateLandscape ? rect.height : rect.width;
+          
+          if (relativeX < refWidth * 0.3) {
+              touchStartRef.current.type = 'brightness';
+          } else if (relativeX > refWidth * 0.7) {
+              touchStartRef.current.type = 'volume';
+          } else {
+              return; // Do nothing in the middle 40%
+          }
        } else {
           return
        }
@@ -1010,7 +1018,6 @@ function PlayerContent() {
        const percent = deltaX / Math.max(refLength, 1)
        const deltaSeconds = percent * 180 // Max +/- 3 mins per full screen swipe
        setSeekingDelta(deltaSeconds)
-       setShowControls(true)
     } else if (touchStartRef.current.type === 'volume') {
        const rect = playerContainerRef.current!.getBoundingClientRect()
        const refLength = shouldSimulateLandscape ? rect.width : rect.height
@@ -1020,7 +1027,6 @@ function PlayerContent() {
        setVolume(newVol)
        setIsMuted(newVol === 0)
        setVolumeDelta(newVol)
-       exposeVolumeSlider()
     } else if (touchStartRef.current.type === 'brightness') {
        const rect = playerContainerRef.current!.getBoundingClientRect()
        const refLength = shouldSimulateLandscape ? rect.width : rect.height
@@ -1510,12 +1516,34 @@ function PlayerContent() {
            }}
            onDoubleClick={(e) => {
              if (isLocked) return;
-             if (typeof window !== 'undefined' && window.innerWidth < 1024) return;
              
              if (clickTimeoutRef.current) {
                 clearTimeout(clickTimeoutRef.current)
                 clickTimeoutRef.current = null
              }
+
+             if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+                if (!videoRef.current) return;
+                const rect = playerContainerRef.current!.getBoundingClientRect();
+                const clickX = shouldSimulateLandscape 
+                   ? e.clientY - rect.top 
+                   : e.clientX - rect.left;
+                const refWidth = shouldSimulateLandscape ? rect.height : rect.width;
+                
+                if (clickX < refWidth * 0.3) {
+                   videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 15);
+                   setSeekingDelta(-15);
+                   if ((window as any)._doubleTapTimeout) clearTimeout((window as any)._doubleTapTimeout);
+                   (window as any)._doubleTapTimeout = setTimeout(() => setSeekingDelta(null), 800);
+                } else if (clickX > refWidth * 0.7) {
+                   videoRef.current.currentTime = Math.min(videoRef.current.duration, videoRef.current.currentTime + 15);
+                   setSeekingDelta(15);
+                   if ((window as any)._doubleTapTimeout) clearTimeout((window as any)._doubleTapTimeout);
+                   (window as any)._doubleTapTimeout = setTimeout(() => setSeekingDelta(null), 800);
+                }
+                return;
+             }
+
              toggleFullscreen(e)
            }}
            className={`relative flex items-center justify-center bg-black shrink-0 transition-opacity duration-300 ${
