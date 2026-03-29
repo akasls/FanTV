@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
        if (payload && payload.role === 'ADMIN') {
          let setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } })
          if (!setting) {
-             setting = await prisma.systemSetting.create({ data: { id: 'global', allowRegistration: true, allowGuestAccess: false, siteName: 'FanTv', siteDescription: 'A modern dual-mode video application.', siteLogo: '', removeTsAd: false } })
+             setting = await prisma.systemSetting.create({ data: { id: 'global', allowRegistration: false, allowGuestAccess: false, siteName: 'FanTv', siteDescription: 'A modern dual-mode video application.', siteLogo: '', removeTsAd: false } })
          }
          return NextResponse.json(setting)
        }

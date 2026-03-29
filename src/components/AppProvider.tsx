@@ -16,6 +16,11 @@ export default function AppProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     fetchCurrentUser().then((data) => {
+      // Set Document Title overrides from DB
+      if (data?.config?.siteName) {
+         document.title = data.config.siteName;
+      }
+      
       if (!data?.user && data?.config && data.config.allowGuestAccess === false) {
          if (!isAuthPage) {
             router.replace('/login')

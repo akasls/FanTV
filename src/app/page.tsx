@@ -88,6 +88,7 @@ export default function Home() {
     setDoubanYear,
     doubanSort,
     setDoubanSort,
+    userSourceOrder,
   } = useAppStore();
 
   const STATIC_CHANNELS = [
@@ -250,6 +251,16 @@ const API_DELAY = 1000;
           const active = data.filter(
             (s: any) => !userDisabledSources.includes(s.id),
           );
+          if (userSourceOrder && userSourceOrder.length > 0) {
+            active.sort((a: any, b: any) => {
+              const aIdx = userSourceOrder.indexOf(a.id);
+              const bIdx = userSourceOrder.indexOf(b.id);
+              if (aIdx === -1 && bIdx === -1) return (a.order || 0) - (b.order || 0);
+              if (aIdx === -1) return 1;
+              if (bIdx === -1) return -1;
+              return aIdx - bIdx;
+            });
+          }
           setSources(active);
           const matched = active.find(
             (s: any) => s.id === selectedSourceGlobal,
@@ -268,7 +279,7 @@ const API_DELAY = 1000;
         }
       })
       .catch(console.error);
-  }, [mounted, currentMode, userDisabledSources]);
+  }, [mounted, currentMode, userDisabledSources, userSourceOrder]);
 
   // Fetch Douban Popular Lists
   useEffect(() => {

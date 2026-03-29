@@ -202,6 +202,7 @@ export default function SourcesManager() {
             body: JSON.stringify({ id: s.id, order: s.order })
           }))
         );
+        useAppStore.getState().setUserSourceOrder([]);
       }
       alert('测速排序完成!');
     } finally {
@@ -315,6 +316,7 @@ export default function SourcesManager() {
         body: JSON.stringify({ id: s.id, order: s.order })
       }))
     )
+    setUserSourceOrder([]);
   }
 
   const handleDelete = async (id: string, name: string) => {

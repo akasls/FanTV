@@ -17,22 +17,36 @@ export const viewport: Viewport = {
   userScalable: false,
 }
 
-export const metadata: Metadata = {
-  title: 'FanTv',
-  description: 'A modern dual-mode video application.',
-  manifest: '/manifest.webmanifest',
-  icons: { 
-     icon: '/logo.png', 
-     apple: '/icons/icon-192x192.png' 
-  },
-  appleWebApp: {
-    capable: true,
-    title: 'FanTv',
-    statusBarStyle: 'black-translucent',
-  },
-  formatDetection: {
-    telephone: false,
-  },
+import prisma from '@/lib/prisma'
+
+export async function generateMetadata(): Promise<Metadata> {
+  let siteName = 'FanTv'
+  let siteDescription = 'A modern dual-mode video application.'
+  try {
+     const setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } })
+     if (setting) {
+        siteName = setting.siteName
+        siteDescription = setting.siteDescription
+     }
+  } catch(e) {}
+
+  return {
+    title: siteName,
+    description: siteDescription,
+    manifest: '/manifest.webmanifest',
+    icons: { 
+       icon: '/logo.png', 
+       apple: '/icons/icon-192x192.png' 
+    },
+    appleWebApp: {
+      capable: true,
+      title: siteName,
+      statusBarStyle: 'black-translucent',
+    },
+    formatDetection: {
+      telephone: false,
+    },
+  }
 }
 
 export default function RootLayout({

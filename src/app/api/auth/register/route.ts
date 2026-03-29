@@ -24,7 +24,9 @@ export async function POST(req: NextRequest) {
         passwordHash: password,
         role: "USER",
         allowAdultMode: false,
-        sessionId: newSessionId
+        sessionId: newSessionId,
+        doubanDataProxy: sysSetting?.doubanDataProxy || "",
+        doubanImageProxy: sysSetting?.doubanImageProxy || ""
       }
     })
 

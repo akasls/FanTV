@@ -30,13 +30,16 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.user.findUnique({ where: { username } })
     if (existing) return NextResponse.json({ error: "用户已存在" }, { status: 400 })
 
+    const sysSetting = await prisma.systemSetting.findUnique({ where: { id: 'global' } })
     const user = await prisma.user.create({
       data: {
         username,
         passwordHash: passwordHash || "123456", // dummy basic password default
         allowAdultMode: allowAdultMode ?? false,
         isActive: isActive ?? true,
-        role: role || "USER"
+        role: role || "USER",
+        doubanDataProxy: sysSetting?.doubanDataProxy || "",
+        doubanImageProxy: sysSetting?.doubanImageProxy || ""
       }
     })
     return NextResponse.json(user)
