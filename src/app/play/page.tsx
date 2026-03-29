@@ -283,6 +283,7 @@ function PlayerContent() {
 
     if (isFullscreen || isWebFullscreen || isManualWebFullscreen) {
       document.body.style.overflow = 'hidden'
+      document.documentElement.style.backgroundColor = '#000000'
       if (metaThemeColor) {
         metaThemeColor.setAttribute('content', '#000000');
       } else {
@@ -294,6 +295,7 @@ function PlayerContent() {
       }
     } else {
       document.body.style.overflow = ''
+      document.documentElement.style.backgroundColor = ''
       if (metaThemeColor && originalThemeColor) {
         metaThemeColor.setAttribute('content', originalThemeColor);
       } else {
@@ -303,6 +305,7 @@ function PlayerContent() {
     }
     return () => { 
        document.body.style.overflow = '';
+       document.documentElement.style.backgroundColor = '';
        if (metaThemeColor && originalThemeColor) {
          metaThemeColor.setAttribute('content', originalThemeColor);
        } else {

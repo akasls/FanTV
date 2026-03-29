@@ -56,12 +56,14 @@ export default function SourcesManager() {
 
   const [isSpeedTestingAll, setIsSpeedTestingAll] = useState(false)
   const [testingSourceId, setTestingSourceId] = useState<string | null>(null)
+  const [testingIndex, setTestingIndex] = useState(0)
 
   const handleSpeedTestAndSort = async () => {
     if (isSpeedTestingAll) return;
-    if (!confirm('这将会自动拉取所有站点的影片进行速度测试并重新排序。确认继续吗？')) return;
+    if (!confirm('这将会自动拉取所有站点的影片进行下载速度测试并重新排序（可能需要数秒至数十秒）。确认继续吗？')) return;
     
     setIsSpeedTestingAll(true);
+    setTestingIndex(0);
     
     try {
       const currentSources = [...sources];
@@ -81,12 +83,15 @@ export default function SourcesManager() {
         return urls.length > 0 ? urls[0] : null;
       };
 
+      let activeCount = 0;
       for (const src of currentSources) {
          if (!src.isActive) {
             results.push({ src, score: -99999 });
             continue;
          }
          
+         activeCount++;
+         setTestingIndex(activeCount);
          setTestingSourceId(src.id);
          
          try {
@@ -116,12 +121,66 @@ export default function SourcesManager() {
 
             const startInit = performance.now();
             const controller = new AbortController();
-            const timeout = setTimeout(() => controller.abort(), 4000); 
+            const timeout = setTimeout(() => controller.abort(), 8000); 
             
-            await fetch(urlToTest, { method: "HEAD", mode: "no-cors", signal: controller.signal }).catch(() => null);
+            let finalScore = -50000;
+            try {
+              const res = await fetch(urlToTest, { signal: controller.signal });
+              const latency = Math.round(performance.now() - startInit);
+              const text = await res.text();
+              
+              let nextUrl = urlToTest;
+              const lines = text.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+              if (lines.length > 0) {
+                 let n1 = lines[0].trim();
+                 nextUrl = n1.startsWith('http') ? n1 : new URL(n1, urlToTest).href;
+              }
+              
+              if (nextUrl.includes('.m3u8')) {
+                 const res2 = await fetch(nextUrl, { signal: controller.signal });
+                 const text2 = await res2.text();
+                 const lines2 = text2.split('\n').filter(l => l.trim() && !l.startsWith('#'));
+                 if (lines2.length > 0) {
+                     let n2 = lines2[0].trim();
+                     nextUrl = n2.startsWith('http') ? n2 : new URL(n2, nextUrl).href;
+                 }
+              }
+
+              const tsRes = await fetch(nextUrl, { signal: controller.signal });
+              let receivedLength = 0;
+              if (tsRes.body) {
+                  const reader = tsRes.body.getReader();
+                  const streamStart = performance.now();
+                  try {
+                      while(true) {
+                          const { done, value } = await reader.read();
+                          if (done) break;
+                          if (value) receivedLength += value.length;
+                          // Read up to 512KB
+                          if (receivedLength > 512 * 1024) {
+                              reader.cancel().catch(() => {});
+                              break;
+                          }
+                      }
+                  } catch(e) {}
+                  const streamEnd = performance.now();
+                  const streamDuration = (streamEnd - streamStart) / 1000;
+                  const speedKbps = receivedLength > 0 && streamDuration > 0 ? (receivedLength / 1024) / streamDuration : 0;
+                  
+                  // Sort Score = speed * 10 - latency
+                  finalScore = Math.round((speedKbps * 10) - latency);
+              } else {
+                  throw new Error('No body stream');
+              }
+            } catch(e) {
+               // Fallback: ping only via HEAD no-cors
+               const fallbackStart = performance.now();
+               await fetch(urlToTest, { method: "HEAD", mode: "no-cors", signal: controller.signal }).catch(() => null);
+               const latency = Math.round(performance.now() - fallbackStart);
+               finalScore = -latency;
+            }
             clearTimeout(timeout);
-            const latency = Math.round(performance.now() - startInit);
-            results.push({ src, score: -latency });
+            results.push({ src, score: finalScore });
 
          } catch(e) {
             results.push({ src, score: -99999 });
@@ -352,6 +411,30 @@ export default function SourcesManager() {
   }
 
   return (
+    <>
+      {isSpeedTestingAll && (
+        <div className="fixed inset-0 z-[200] flex flex-col items-center justify-center bg-black/60 backdrop-blur-md">
+          <div className="bg-white dark:bg-gray-900 p-6 md:p-8 rounded-[24px] shadow-2xl flex flex-col items-center w-full max-w-sm mx-4 transform animate-in zoom-in-95 duration-300">
+             <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center mb-6">
+                <BoltIcon className="w-8 h-8 text-blue-500 animate-pulse" />
+             </div>
+             <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-2">正在测速排序中</h3>
+             <p className="text-sm text-center text-gray-500 dark:text-gray-400 mb-6 w-full px-4 leading-relaxed">
+               自动拉取节点分片并测试真实下载带宽...<br/>这可能需要数十秒的时间，请勿关闭页面
+             </p>
+             <div className="w-full bg-gray-100 dark:bg-gray-800 rounded-full h-2 mb-4 overflow-hidden shadow-inner">
+                <div className="bg-blue-500 h-full rounded-full transition-all duration-300 relative overflow-hidden" 
+                     style={{ width: `${Math.round(((testingIndex) / Math.max(1, sources.filter(s => s.isActive).length)) * 100)}%` }}>
+                   <div className="absolute inset-x-0 top-0 bottom-0 bg-white/20 w-full animate-[shimmer_1s_infinite] -skew-x-12 transform scale-x-150"></div>
+                </div>
+             </div>
+             <div className="text-xs font-medium text-gray-400 dark:text-gray-500 flex items-center justify-between w-full px-2">
+               <span className="truncate max-w-[150px]">{testingSourceId ? sources.find(s => s.id === testingSourceId)?.name : '初始化...'}</span>
+               <span>{testingIndex} / {sources.filter(s => s.isActive).length}</span>
+             </div>
+          </div>
+        </div>
+      )}
     <div className="space-y-6 pb-24">
       <header className="flex items-center justify-between pt-2">
         <div className="flex items-center">
@@ -361,16 +444,16 @@ export default function SourcesManager() {
           <span className="ml-1 text-lg font-bold text-gray-800 dark:text-gray-200">源站管理</span>
         </div>
         <div className="flex items-center space-x-3 md:space-x-4">
+          <button 
+            onClick={handleSpeedTestAndSort} 
+            disabled={isSpeedTestingAll}
+            title="一键测速排序"
+            className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400 disabled:opacity-50"
+           >
+            <BoltIcon className={`w-5 h-5 ${isSpeedTestingAll ? 'text-blue-500' : ''}`} />
+          </button>
           {isAdmin && (
             <>
-              <button 
-                onClick={handleSpeedTestAndSort} 
-                disabled={isSpeedTestingAll}
-                title="一键测速排序"
-                className="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 transition text-gray-500 dark:text-gray-400 disabled:opacity-50"
-               >
-                <BoltIcon className={`w-5 h-5 ${isSpeedTestingAll ? 'animate-pulse text-blue-500' : ''}`} />
-              </button>
               <input type="file" id="import-json" accept=".json" className="hidden" onChange={handleImportFile} />
               <button 
                 onClick={() => document.getElementById('import-json')?.click()} 
@@ -495,7 +578,6 @@ export default function SourcesManager() {
               <div className="flex flex-col flex-1 overflow-hidden mr-4">
                 <span className={`font-medium flex items-center space-x-2 ${userDisabledSources.includes(src.id) || !src.isActive ? 'opacity-40 line-through text-gray-500' : 'text-gray-900 dark:text-gray-100'}`}>
                   <span>{src.name} {!src.isActive && !src.name.includes('(无法提取m3u8地址)') ? ' (全域禁用)' : ''}</span>
-                  {testingSourceId === src.id && <span className="text-[10px] text-blue-500 animate-pulse bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded">测速中</span>}
                   <span className={`text-[10px] px-2 py-0.5 rounded-full border ${src.mode === 'Adult' ? 'border-red-500 bg-red-50 text-red-600 dark:bg-red-500/10' : 'border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-500/10'}`}>
                     {src.mode === 'Adult' ? '圣贤' : '普通'}
                   </span>
@@ -629,5 +711,6 @@ export default function SourcesManager() {
       </div>
       )}
     </div>
+    </>
   )
 }

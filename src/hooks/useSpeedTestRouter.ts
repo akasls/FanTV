@@ -3,7 +3,7 @@ import { useAppStore } from "@/store/useAppStore";
 
 export function useSpeedTestRouter() {
   const router = useRouter();
-  const { currentMode, speedTestPlayback } = useAppStore();
+  const { currentMode, speedTestPlayback, searchTerm } = useAppStore();
 
   const routeWithSpeedTest = (video: any) => {
     if (video.isDouban) {
@@ -13,8 +13,8 @@ export function useSpeedTestRouter() {
 
     const targetId = video.vod_id || video.videoId || video.id;
     
-    // Adult mode or explicitly disabled tests escape the speed test.
-    if (currentMode === "Adult" || speedTestPlayback === false) {
+    // Adult mode, explicitly disabled tests, or search results escape the speed test.
+    if (currentMode === "Adult" || speedTestPlayback === false || searchTerm) {
       router.push(
         `/play?id=${targetId}&sourceId=${encodeURIComponent(video._sourceId)}&searchName=${encodeURIComponent(video.vod_name || video.title || "")}`,
       );

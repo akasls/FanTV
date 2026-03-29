@@ -64,9 +64,8 @@ export default function AppProvider({ children }: { children: React.ReactNode })
                     historyData: state.historyData, 
                     favoriteData: state.favoriteData, 
                     sourceOrder: prefixedOrder 
-                 }),
-                 keepalive: true
-              }).catch(console.error)
+                 })
+              }).catch(() => {})
            }, 3000)
         }
      })
