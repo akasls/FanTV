@@ -7,6 +7,10 @@ import PWAProvider from '@/components/PWAProvider'
 const inter = Inter({ subsets: ['latin'] })
 
 export const viewport: Viewport = {
+  themeColor: [
+    { media: '(prefers-color-scheme: light)', color: '#e4e8e9' },
+    { media: '(prefers-color-scheme: dark)', color: '#1c1c1e' },
+  ],
   width: 'device-width',
   initialScale: 1,
   maximumScale: 1,

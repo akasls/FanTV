@@ -281,6 +281,8 @@ function PlayerContent() {
     if (isAnyFull) {
       document.body.style.overflow = 'hidden'
       document.documentElement.classList.add('pwa-fullscreen')
+      const viewportMeta = document.querySelector('meta[name="viewport"]');
+      if (viewportMeta) viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=false, viewport-fit=cover');
       
       const metaTags = document.querySelectorAll('meta[name="theme-color"]');
       if (metaTags.length > 0) {
@@ -305,6 +307,8 @@ function PlayerContent() {
     } else {
       document.body.style.overflow = ''
       document.documentElement.classList.remove('pwa-fullscreen')
+      const viewportMeta = document.querySelector('meta[name="viewport"]');
+      if (viewportMeta) viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=false');
       if (originalThemeColorsRef.current.length > 0) {
          originalThemeColorsRef.current.forEach(item => {
              item.meta.setAttribute('content', item.content);
@@ -320,6 +324,8 @@ function PlayerContent() {
     return () => { 
        document.body.style.overflow = '';
        document.documentElement.classList.remove('pwa-fullscreen');
+       const viewportMeta = document.querySelector('meta[name="viewport"]');
+       if (viewportMeta) viewportMeta.setAttribute('content', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=false');
        if (originalThemeColorsRef.current.length > 0) {
          originalThemeColorsRef.current.forEach(item => {
              item.meta.setAttribute('content', item.content);
