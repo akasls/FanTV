@@ -274,7 +274,7 @@ function PlayerContent() {
 
   const shouldSimulateLandscape = Boolean(isManualWebFullscreen && isPortrait && !isVerticalVideo)
 
-  const originalThemeColorsRef = useRef<{meta: Element, content: string}[]>([])
+  const originalThemeColorsRef = useRef<{meta: Element, content: string, media?: string}[]>([])
 
   useEffect(() => {
     const isAnyFull = isFullscreen || isWebFullscreen || isManualWebFullscreen;
@@ -282,15 +282,19 @@ function PlayerContent() {
       document.body.style.overflow = 'hidden'
       document.body.style.setProperty('background-color', '#000000', 'important')
       document.documentElement.style.setProperty('background-color', '#000000', 'important')
+      document.documentElement.style.setProperty('--background', '#000000') // Force safe-area background on iOS 15+
       
       const metaTags = document.querySelectorAll('meta[name="theme-color"]');
       if (metaTags.length > 0) {
          if (originalThemeColorsRef.current.length === 0) {
              metaTags.forEach(m => {
-                 originalThemeColorsRef.current.push({ meta: m, content: m.getAttribute('content') || '' });
+                 originalThemeColorsRef.current.push({ meta: m, content: m.getAttribute('content') || '', media: m.getAttribute('media') || '' });
              });
          }
-         metaTags.forEach(m => m.setAttribute('content', '#000000'));
+         metaTags.forEach(m => {
+             m.removeAttribute('media'); // Override iOS media query locking
+             m.setAttribute('content', '#000000');
+         });
       } else {
         if (!document.getElementById('temp-theme-color')) {
             const meta = document.createElement('meta');
@@ -304,9 +308,11 @@ function PlayerContent() {
       document.body.style.overflow = ''
       document.body.style.removeProperty('background-color')
       document.documentElement.style.removeProperty('background-color')
+      document.documentElement.style.removeProperty('--background')
       if (originalThemeColorsRef.current.length > 0) {
          originalThemeColorsRef.current.forEach(item => {
              item.meta.setAttribute('content', item.content);
+             if (item.media) item.meta.setAttribute('media', item.media);
          });
          originalThemeColorsRef.current = []; // Clear it
       } else {
@@ -319,9 +325,11 @@ function PlayerContent() {
        document.body.style.overflow = '';
        document.body.style.removeProperty('background-color');
        document.documentElement.style.removeProperty('background-color');
+       document.documentElement.style.removeProperty('--background');
        if (originalThemeColorsRef.current.length > 0) {
          originalThemeColorsRef.current.forEach(item => {
              item.meta.setAttribute('content', item.content);
+             if (item.media) item.meta.setAttribute('media', item.media);
          });
          originalThemeColorsRef.current = [];
        } else {
@@ -382,7 +390,7 @@ function PlayerContent() {
               const { historyData, setHistoryData, currentMode } = useAppStore.getState()
               const exists = historyData.find(h => h.videoId === String(id) && h._sourceId === sourceId)
               if (!exists) {
-                  const prevRecord = historyData.find(h => String(h.videoId) === String(id))
+                  const prevRecord = historyData.find(h => (h.videoName && data.video.vod_name && h.videoName === data.video.vod_name) || String(h.videoId) === String(id))
                   setHistoryData([{
                       videoId: String(id),
                       videoName: data.video.vod_name,
@@ -420,7 +428,7 @@ function PlayerContent() {
                 }).filter((e: any) => e.url)
                   
                   if (eps.length > 0) {
-                     const globalHist = useAppStore.getState().historyData.find(v => String(v.videoId) === String(id))
+                     const globalHist = useAppStore.getState().historyData.find(v => (v.videoName && data?.video?.vod_name && v.videoName === data.video.vod_name) || String(v.videoId) === String(id))
                      let targetEp = eps[0]
                      if (globalHist && globalHist.epName) {
                        const matchName = eps.find((e: {name: string, url: string}) => e.name === globalHist.epName || e.name.includes(globalHist.epName || '') || (globalHist.epName || '').includes(e.name))
@@ -593,7 +601,7 @@ function PlayerContent() {
         }
 
         const { enableAdBlock, historyData } = useAppStore.getState()
-        const globalHistLine = historyData.find(v => String(v.videoId) === String(id))
+        const globalHistLine = historyData.find(v => (v.videoName && video?.vod_name && v.videoName === video.vod_name) || String(v.videoId) === String(id))
         let startPos = -1
         if (globalHistLine && globalHistLine.currentTime && globalHistLine.currentTime > 0) {
            const isSameEp = globalHistLine.epName === epName || (epName && globalHistLine.epName && (epName.includes(globalHistLine.epName) || globalHistLine.epName.includes(epName))) || globalHistLine.epUrl === rawUrl;
@@ -645,7 +653,7 @@ function PlayerContent() {
         videoRef.current!.src = rawUrl
         
         const { historyData } = useAppStore.getState()
-        const globalHistLine = historyData.find(v => String(v.videoId) === String(id))
+        const globalHistLine = historyData.find(v => (v.videoName && video?.vod_name && v.videoName === video.vod_name) || String(v.videoId) === String(id))
         let startPos = -1
         if (globalHistLine && globalHistLine.currentTime && globalHistLine.currentTime > 0) {
            const isSameEp = globalHistLine.epName === epName || (epName && globalHistLine.epName && (epName.includes(globalHistLine.epName) || globalHistLine.epName.includes(epName))) || globalHistLine.epUrl === rawUrl;

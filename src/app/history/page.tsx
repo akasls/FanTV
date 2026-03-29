@@ -11,8 +11,7 @@ export default function HistoryPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const toggleSelection = (videoId: string, sourceId: string) => {
-    const key = `${sourceId}-${videoId}`;
+  const toggleSelection = (key: string) => {
     const newSet = new Set(selectedIds);
     if (newSet.has(key)) newSet.delete(key);
     else newSet.add(key);
@@ -21,9 +20,9 @@ export default function HistoryPage() {
 
   const handleDeleteSelected = () => {
     if (selectedIds.size === 0) return;
-    if (confirm(`确定要删除选中的 ${selectedIds.size} 条播放历史吗？`)) {
+    if (confirm(`确定要删除选中的 ${selectedIds.size} 部影片关联的所有播放历史吗？`)) {
       const newData = historyData.filter(
-        (v) => !selectedIds.has(`${v._sourceId}-${v.videoId}`),
+        (v) => !selectedIds.has(v.videoName?.toLowerCase().trim() || String(v.videoId)),
       );
       setHistoryData(newData);
       setSelectedIds(new Set());
@@ -38,7 +37,16 @@ export default function HistoryPage() {
         v.videoName?.toLowerCase().includes(search.toLowerCase()),
       );
     }
-    return data;
+    const uniqueData = [];
+    const seen = new Set();
+    for (const item of data) {
+       const key = item.videoName?.toLowerCase().trim() || String(item.videoId);
+       if (!seen.has(key)) {
+           seen.add(key);
+           uniqueData.push(item);
+       }
+    }
+    return uniqueData;
   }, [historyData, currentMode, search]);
 
   return (
@@ -112,19 +120,16 @@ export default function HistoryPage() {
       ) : (
         <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-2 sm:gap-4 md:gap-6 lg:gap-8">
           {displayData.map((video, idx) => {
-            const isSelected = selectedIds.has(
-              `${video._sourceId}-${video.videoId}`,
-            );
+            const key = video.videoName?.toLowerCase().trim() || String(video.videoId);
+            const isSelected = selectedIds.has(key);
             return (
               <button
                 onClick={() => {
-                  if (isEditing)
-                    toggleSelection(
-                      String(video.videoId),
-                      String(video._sourceId),
-                    );
-                  else
+                  if (isEditing) {
+                    toggleSelection(key);
+                  } else {
                     routeWithSpeedTest({ ...video, vod_name: video.videoName });
+                  }
                 }}
                 key={`${video._sourceId}-${video.videoId}-${idx}`}
                 className={`flex flex-col group cursor-pointer relative ${isEditing && isSelected ? "opacity-70 scale-[0.98]" : ""} transition-all outline-none`}

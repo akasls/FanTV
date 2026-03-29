@@ -12,8 +12,7 @@ export default function FavoritesPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  const toggleSelection = (videoId: string) => {
-    const key = String(videoId);
+  const toggleSelection = (key: string) => {
     const newSet = new Set(selectedIds);
     if (newSet.has(key)) newSet.delete(key);
     else newSet.add(key);
@@ -24,7 +23,7 @@ export default function FavoritesPage() {
     if (selectedIds.size === 0) return;
     if (confirm(`确定要删除选中的 ${selectedIds.size} 部影片关联的所有收藏记录吗？`)) {
       const newData = favoriteData.filter(
-        (v) => !selectedIds.has(String(v.videoId)),
+        (v) => !selectedIds.has(v.videoName?.toLowerCase().trim() || String(v.videoId)),
       );
       setFavoriteData(newData);
       setSelectedIds(new Set());
@@ -42,8 +41,9 @@ export default function FavoritesPage() {
     const uniqueData = [];
     const seen = new Set();
     for (const item of data) {
-       if (!seen.has(String(item.videoId))) {
-           seen.add(String(item.videoId));
+       const key = item.videoName?.toLowerCase().trim() || String(item.videoId);
+       if (!seen.has(key)) {
+           seen.add(key);
            uniqueData.push(item);
        }
     }
@@ -130,13 +130,14 @@ export default function FavoritesPage() {
               playUrl += `&epName=${encodeURIComponent(hist.epName || "")}&epUrl=${encodeURIComponent(hist.epUrl)}`;
             }
 
-            const isSelected = selectedIds.has(String(video.videoId));
+            const key = video.videoName?.toLowerCase().trim() || String(video.videoId);
+            const isSelected = selectedIds.has(key);
 
             return (
               <button
                 onClick={() => {
                   if (isEditing) {
-                    toggleSelection(String(video.videoId));
+                    toggleSelection(key);
                   } else {
                     routeWithSpeedTest({ ...video, vod_name: video.videoName });
                   }
