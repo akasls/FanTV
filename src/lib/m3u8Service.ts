@@ -7,7 +7,7 @@ const m3u8Cache = new NodeCache({
 });
 
 export async function cleanM3u8(m3u8Url: string, proxyBaseUrl?: string): Promise<string> {
-  const cacheKey = `proxy_${m3u8Url}`;
+  const cacheKey = `proxy_v3_${m3u8Url}`;
   const cached = m3u8Cache.get<string>(cacheKey);
   if (cached) {
     return cached;
