@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
        if (payload && payload.role === 'ADMIN') {
          let setting = await prisma.systemSetting.findUnique({ where: { id: 'global' } })
          if (!setting) {
-             setting = await prisma.systemSetting.create({ data: { id: 'global', allowRegistration: true, allowGuestAccess: false, siteName: 'FanTv', siteDescription: 'A modern dual-mode video application.', siteLogo: '' } })
+             setting = await prisma.systemSetting.create({ data: { id: 'global', allowRegistration: true, allowGuestAccess: false, siteName: 'FanTv', siteDescription: 'A modern dual-mode video application.', siteLogo: '', removeTsAd: false } })
          }
          return NextResponse.json(setting)
        }
@@ -29,7 +29,7 @@ export async function PUT(request: NextRequest) {
     if (!payload || payload.role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     
     const body = await request.json()
-    const { allowRegistration, allowGuestAccess, siteName, siteDescription, siteLogo, doubanDataProxy, doubanImageProxy, speedTestPlayback, shortDramaApiUrl, shortDramaCategories } = body
+    const { allowRegistration, allowGuestAccess, siteName, siteDescription, siteLogo, doubanDataProxy, doubanImageProxy, speedTestPlayback, removeTsAd, shortDramaApiUrl, shortDramaCategories } = body
 
     const updateData: any = {}
     if (allowRegistration !== undefined) updateData.allowRegistration = allowRegistration
@@ -40,6 +40,7 @@ export async function PUT(request: NextRequest) {
     if (doubanDataProxy !== undefined) updateData.doubanDataProxy = doubanDataProxy
     if (doubanImageProxy !== undefined) updateData.doubanImageProxy = doubanImageProxy
     if (speedTestPlayback !== undefined) updateData.speedTestPlayback = speedTestPlayback
+    if (removeTsAd !== undefined) updateData.removeTsAd = removeTsAd
     if (shortDramaApiUrl !== undefined) updateData.shortDramaApiUrl = shortDramaApiUrl
     if (shortDramaCategories !== undefined) updateData.shortDramaCategories = shortDramaCategories
 
@@ -56,6 +57,7 @@ export async function PUT(request: NextRequest) {
          doubanDataProxy: doubanDataProxy ?? '',
          doubanImageProxy: doubanImageProxy ?? '',
          speedTestPlayback: speedTestPlayback ?? true,
+         removeTsAd: removeTsAd ?? false,
          shortDramaApiUrl: shortDramaApiUrl ?? null,
          shortDramaCategories: shortDramaCategories ?? null
       }

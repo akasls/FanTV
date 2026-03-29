@@ -80,6 +80,7 @@ model SystemSetting {
   doubanDataProxy   String   @default("")
   doubanImageProxy  String   @default("")
   speedTestPlayback Boolean  @default(true) // 播放测速
+  removeTsAd        Boolean  @default(false)
   shortDramaApiUrl  String?
   shortDramaCategories String? // JSON string of subcategories [{name, url}]
 

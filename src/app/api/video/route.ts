@@ -30,9 +30,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Video not found' }, { status: 404 })
     }
 
+    let videoData = data.list[0]
+
     return NextResponse.json({
       video: {
-         ...data.list[0],
+         ...videoData,
          _sourceId: source.id,
          _sourceName: source.name
       }

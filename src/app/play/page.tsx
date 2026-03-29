@@ -600,7 +600,7 @@ function PlayerContent() {
            }
         }
 
-        const { enableAdBlock, historyData } = useAppStore.getState()
+        const { enableAdBlock, historyData, siteConfig } = useAppStore.getState()
         const globalHistLine = historyData.find(v => (v.videoName && video?.vod_name && v.videoName === video.vod_name) || String(v.videoId) === String(id))
         let startPos = -1
         if (globalHistLine && globalHistLine.currentTime && globalHistLine.currentTime > 0) {
@@ -610,10 +610,17 @@ function PlayerContent() {
            }
         }
 
+        let finalPlayUrl = rawUrl;
+        if (enableAdBlock && siteConfig?.removeTsAd && (finalPlayUrl.includes('.m3u8') || finalPlayUrl.startsWith('http'))) {
+            finalPlayUrl = `/api/proxy/m3u8?url=${encodeURIComponent(finalPlayUrl)}`;
+        }
+
         const hlsConfig: any = {
            maxBufferLength: 60,
            maxMaxBufferLength: 600,
            maxBufferSize: 60 * 1000 * 1000,
+           manifestLoadingMaxRetryTimeout: 30000,
+           manifestLoadingTimeOut: 20000,
         }
         if (startPos > 0) hlsConfig.startPosition = startPos
         if (enableAdBlock) {
@@ -622,7 +629,7 @@ function PlayerContent() {
 
         hls = new Hls.default(hlsConfig)
         
-        hls.loadSource(rawUrl)
+        hls.loadSource(finalPlayUrl)
         hls.attachMedia(videoRef.current!)
         
         hls.on(Hls.default.Events.ERROR, function (_: any, data: any) {
@@ -650,9 +657,14 @@ function PlayerContent() {
         })
       } 
       else if (videoRef.current!.canPlayType('application/vnd.apple.mpegurl')) {
-        videoRef.current!.src = rawUrl
+        const store = useAppStore.getState()
+        let finalPlayUrl = rawUrl;
+        if (store.enableAdBlock && store.siteConfig?.removeTsAd && (finalPlayUrl.includes('.m3u8') || finalPlayUrl.startsWith('http'))) {
+            finalPlayUrl = `/api/proxy/m3u8?url=${encodeURIComponent(finalPlayUrl)}`;
+        }
+        videoRef.current!.src = finalPlayUrl
         
-        const { historyData } = useAppStore.getState()
+        const { historyData } = store
         const globalHistLine = historyData.find(v => (v.videoName && video?.vod_name && v.videoName === video.vod_name) || String(v.videoId) === String(id))
         let startPos = -1
         if (globalHistLine && globalHistLine.currentTime && globalHistLine.currentTime > 0) {

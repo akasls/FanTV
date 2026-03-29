@@ -13,6 +13,7 @@ export interface SiteConfig {
   doubanDataProxy?: string
   doubanImageProxy?: string
   speedTestPlayback?: boolean
+  removeTsAd?: boolean
   shortDramaApiUrl?: string | null
   shortDramaCategories?: string | null;
 }
@@ -199,6 +200,7 @@ export const useAppStore = create<AppState>()(
                  siteDescription: data.config.siteDescription,
                  siteLogo: data.config.siteLogo,
                  speedTestPlayback: data.config.speedTestPlayback,
+                 removeTsAd: data.config.removeTsAd,
                  shortDramaApiUrl: data.config.shortDramaApiUrl,
                  shortDramaCategories: data.config.shortDramaCategories
              }})

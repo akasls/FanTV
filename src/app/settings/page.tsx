@@ -200,23 +200,36 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-4 md:p-6 transition-colors">
-            <div>
-              <h3 className="font-medium">去除切片广告</h3>
-              <p className="text-sm text-gray-500 mt-0.5">
-                实验性功能：开启去除切片广告
-              </p>
+          {(isAdmin || siteConfig?.removeTsAd) && (
+            <div className="flex items-center justify-between p-4 md:p-6 transition-colors">
+              <div>
+                <h3 className="font-medium">去除切片广告</h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  开启后端智能拦截，大幅减少视频内的博彩切片广告
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="sr-only peer"
+                  checked={enableAdBlock}
+                  onChange={(e) => {
+                    const nextVal = e.target.checked;
+                    setEnableAdBlock(nextVal);
+                    if (isAdmin) {
+                      useAppStore.getState().setSiteConfig({ ...siteConfig, removeTsAd: nextVal });
+                      fetch("/api/system-settings", {
+                        method: "PUT",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ removeTsAd: nextVal }),
+                      });
+                    }
+                  }}
+                />
+                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-500"></div>
+              </label>
             </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={enableAdBlock}
-                onChange={(e) => setEnableAdBlock(e.target.checked)}
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-500"></div>
-            </label>
-          </div>
+          )}
 
 
 

@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     siteDescription: setting.siteDescription,
     siteLogo: setting.siteLogo,
     speedTestPlayback: (setting as any).speedTestPlayback,
+    removeTsAd: (setting as any).removeTsAd,
     shortDramaApiUrl: (setting as any).shortDramaApiUrl,
     shortDramaCategories: (setting as any).shortDramaCategories,
   };
