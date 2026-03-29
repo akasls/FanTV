@@ -535,66 +535,116 @@ function PlayerContent() {
     import('hls.js').then((Hls) => {
       if (Hls.default.isSupported()) {
         
-        // --- AdBlocker XHR Loader ---
+        // --- Frontend AdBlocker XHR Loader with HTML5 Gene Sniffing ---
+        const extractResolution = (tsUrl: string): Promise<string> => {
+           return new Promise((resolve) => {
+               const fakeM3u8 = `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:10\n#EXTINF:10.000,\n${tsUrl}\n#EXT-X-ENDLIST`;
+               const blob = new Blob([fakeM3u8], { type: 'application/vnd.apple.mpegurl' });
+               const blobUrl = URL.createObjectURL(blob);
+               const video = document.createElement('video');
+               video.muted = true; 
+               
+               const hlsProbe = new Hls.default({ enableWorker: false, debug: false });
+               const timeoutId = setTimeout(() => {
+                   hlsProbe.destroy(); URL.revokeObjectURL(blobUrl); resolve('TIMEOUT');
+               }, 3000);
+
+               video.addEventListener('loadedmetadata', () => {
+                   clearTimeout(timeoutId);
+                   const res = `${video.videoWidth}x${video.videoHeight}`;
+                   hlsProbe.destroy(); URL.revokeObjectURL(blobUrl); resolve(res);
+               });
+
+               hlsProbe.on(Hls.default.Events.ERROR, function (_: any, data: any) {
+                   if (data.fatal) {
+                       clearTimeout(timeoutId); hlsProbe.destroy(); URL.revokeObjectURL(blobUrl); resolve('ERROR');
+                   }
+               });
+               hlsProbe.loadSource(blobUrl);
+               hlsProbe.attachMedia(video);
+           });
+        };
+
         class AdBlockXhrLoader extends Hls.default.DefaultConfig.loader {
            load(context: any, config: any, callbacks: any) {
              const OriginalSuccess = callbacks.onSuccess;
-             callbacks.onSuccess = (response: any, stats: any, context: any) => {
-               if ((context.type === 'manifest' || context.type === 'level') && response.data) {
-                  const lines = response.data.split('\n');
-                  const result = [];
-                  let isSkipNext = false;
-                  
-                  // Analyze dominant CDN Host to heuristic-block ad injections
-                  const tsLines = lines.filter((l: string) => l && !l.startsWith('#'));
-                  const hostCounts: Record<string, number> = {};
-                  tsLines.forEach((l: string) => {
-                     try { const h = new URL(l).host; hostCounts[h] = (hostCounts[h] || 0) + 1; } catch(e) {}
-                  });
-                  let dominantHost: string | null = null;
-                  let maxCount = 0;
-                  for (const h in hostCounts) {
-                     if (hostCounts[h] > maxCount) { maxCount = hostCounts[h]; dominantHost = h; }
+             callbacks.onSuccess = async (response: any, stats: any, ctx: any) => {
+               if ((ctx.type === 'manifest' || ctx.type === 'level') && response.data) {
+                  const text = response.data;
+                  if (text.includes('#EXT-X-DISCONTINUITY')) {
+                     interface Block { lines: string[]; firstTs: string | null; dur: number; isAd: boolean; }
+                     const blocks: Block[] = [];
+                     let currBlock: Block = { lines: [], firstTs: null, dur: 0, isAd: false };
+                     const globals: string[] = [];
+                     
+                     const lines = text.split('\n');
+                     for (let i = 0; i < lines.length; i++) {
+                        const line = lines[i].trim();
+                        if (!line) continue;
+                        if (blocks.length === 0 && currBlock.lines.length === 0 && line.startsWith('#') && !line.startsWith('#EXTINF') && !line.startsWith('#EXT-X-DISCONTINUITY')) {
+                           globals.push(line); continue;
+                        }
+                        if (line.startsWith('#EXT-X-DISCONTINUITY')) {
+                           if (currBlock.lines.length > 0) blocks.push(currBlock);
+                           currBlock = { lines: [], firstTs: null, dur: 0, isAd: false };
+                        }
+                        currBlock.lines.push(line);
+                        
+                        if (line.startsWith('#EXTINF:')) {
+                           const match = line.match(/#EXTINF:([\d.]+)/);
+                           if (match) currBlock.dur += parseFloat(match[1]);
+                        } else if (!line.startsWith('#')) {
+                           const absUrl = line.startsWith('http') ? line : new URL(line, ctx.url).href;
+                           if (!currBlock.firstTs) currBlock.firstTs = absUrl;
+                           if (/\.(jpg|jpeg|png|gif|bmp|webp)(\?.*)?$/i.test(absUrl)) currBlock.isAd = true;
+                        }
+                     }
+                     if (currBlock.lines.length > 0) blocks.push(currBlock);
+                     
+                     let longestBlock: Block | null = null;
+                     let maxDur = 0;
+                     for (const b of blocks) { if (b.dur > maxDur) { maxDur = b.dur; longestBlock = b; } }
+                     
+                     let mainRes: string | null = null;
+                     let refDomain = ''; let refPath = '';
+                     if (longestBlock && longestBlock.firstTs) {
+                        mainRes = await extractResolution(longestBlock.firstTs);
+                        try { const u = new URL(longestBlock.firstTs); refDomain = u.host; refPath = u.pathname.substring(0, u.pathname.lastIndexOf('/')); } catch(e) {}
+                     }
+                     
+                     for (const b of blocks) {
+                        if (b === longestBlock || b.isAd || !b.firstTs) continue;
+                        let bHost = ''; let bPath = '';
+                        try { const u = new URL(b.firstTs); bHost = u.host; bPath = u.pathname.substring(0, u.pathname.lastIndexOf('/')); } catch(e) {}
+                        
+                        // Strict heuristic dropping
+                        if (refDomain && (bHost !== refDomain || bPath !== refPath)) {
+                           b.isAd = true; continue;
+                        }
+                        // Skip probe if it is safe main block
+                        if (bHost === refDomain && b.dur > 35) continue;
+                        
+                        // Execute final frontend Gene Probe verification
+                        const res = await extractResolution(b.firstTs);
+                        if (res !== mainRes || res === 'TIMEOUT' || res === 'ERROR') {
+                           b.isAd = true;
+                        }
+                     }
+                     
+                     const resultLines = [...globals];
+                     const finalBlocks = blocks.filter(b => !b.isAd);
+                     for (let i = 0; i < finalBlocks.length; i++) {
+                        if (i > 0 && finalBlocks[i].lines[0] !== '#EXT-X-DISCONTINUITY') resultLines.push('#EXT-X-DISCONTINUITY');
+                        resultLines.push(...finalBlocks[i].lines);
+                     }
+                     // Keep ENDLIST if original had it
+                     if (resultLines.length > 0 && text.includes('#EXT-X-ENDLIST') && !resultLines[resultLines.length - 1].includes('#EXT-X-ENDLIST')) {
+                        resultLines.push('#EXT-X-ENDLIST');
+                     }
+                     response.data = resultLines.join('\n');
                   }
-
-                  // Scan and clean the manifest text
-                  for (let i = 0; i < lines.length; i++) {
-                    const line = lines[i];
-                    const trimmed = line.trim();
-                    if (!trimmed) continue;
-
-                    // Extinf Segment definition
-                    if (trimmed.startsWith('#EXTINF:')) {
-                       const nextLine = lines[i+1]?.trim();
-                       if (nextLine && !nextLine.startsWith('#')) {
-                          let isAd = false;
-                          // 1. Image extensions disguised as TS slices
-                          if (/\.(jpg|jpeg|png|gif|bmp|webp)(\?.*)?$/i.test(nextLine)) isAd = true;
-                          
-                          // 2. Cross-CDN injections (AppleCMS typical pattern)
-                          if (dominantHost && maxCount > 5) {
-                             try { if (new URL(nextLine).host !== dominantHost) isAd = true; } catch(e) {}
-                          }
-                          
-                          if (isAd) {
-                             isSkipNext = true; // Mark to drop this segment entirely
-                             continue;
-                          }
-                       }
-                    }
-                    
-                    if (isSkipNext && !trimmed.startsWith('#')) {
-                       isSkipNext = false; // Drop the actual chunk URL
-                       continue;
-                    }
-
-                    result.push(line);
-                  }
-                  
-                  // Reconstruct clean manifest
-                  response.data = result.join('\n');
                }
-               OriginalSuccess(response, stats, context);
+               OriginalSuccess(response, stats, ctx);
              };
              super.load(context, config, callbacks);
            }
