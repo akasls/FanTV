@@ -5,3 +5,8 @@ npm-debug.log
 README.md
 .next
 .git
+*.db
+*.sqlite
+.env*
+runs.json
+tsc_errors.txt

@@ -1157,9 +1157,11 @@ const API_DELAY = 1000;
                           : doubanImageProxy.includes("weserv") ||
                               doubanImageProxy.includes("imgextra")
                             ? `${doubanImageProxy}${encodeURIComponent(item.cover)}`
-                            : `${
-                                doubanImageProxy.replace(/\/$/, "")
-                              }/https://img9.doubanio.com/${item.cover.split("https://img9.doubanio.com/")[1] || item.cover.replace(/https?:\/\/[^/]+\//, "")}`
+                            : doubanImageProxy.includes("cmliussss")
+                              ? `${doubanImageProxy.replace(/\/$/, "")}/${item.cover.replace(/https?:\/\/[^/]+\//, "")}`
+                              : `${
+                                  doubanImageProxy.replace(/\/$/, "")
+                                }/https://img9.doubanio.com/${item.cover.split("https://img9.doubanio.com/")[1] || item.cover.replace(/https?:\/\/[^/]+\//, "")}`
                     }
                     referrerPolicy="no-referrer"
                     alt={item.title}
