@@ -274,40 +274,53 @@ function PlayerContent() {
 
   const shouldSimulateLandscape = Boolean(isManualWebFullscreen && isPortrait && !isVerticalVideo)
 
-  useEffect(() => {
-    let originalThemeColor = '';
-    const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-    if (metaThemeColor) {
-      originalThemeColor = metaThemeColor.getAttribute('content') || '';
-    }
+  const originalThemeColorsRef = useRef<{meta: Element, content: string}[]>([])
 
-    if (isFullscreen || isWebFullscreen || isManualWebFullscreen) {
+  useEffect(() => {
+    const isAnyFull = isFullscreen || isWebFullscreen || isManualWebFullscreen;
+    if (isAnyFull) {
       document.body.style.overflow = 'hidden'
       document.documentElement.style.backgroundColor = '#000000'
-      if (metaThemeColor) {
-        metaThemeColor.setAttribute('content', '#000000');
+      
+      const metaTags = document.querySelectorAll('meta[name="theme-color"]');
+      if (metaTags.length > 0) {
+         if (originalThemeColorsRef.current.length === 0) {
+             metaTags.forEach(m => {
+                 originalThemeColorsRef.current.push({ meta: m, content: m.getAttribute('content') || '' });
+             });
+         }
+         metaTags.forEach(m => m.setAttribute('content', '#000000'));
       } else {
-        const meta = document.createElement('meta');
-        meta.name = 'theme-color';
-        meta.content = '#000000';
-        meta.id = 'temp-theme-color';
-        document.head.appendChild(meta);
+        if (!document.getElementById('temp-theme-color')) {
+            const meta = document.createElement('meta');
+            meta.name = 'theme-color';
+            meta.content = '#000000';
+            meta.id = 'temp-theme-color';
+            document.head.appendChild(meta);
+        }
       }
     } else {
       document.body.style.overflow = ''
       document.documentElement.style.backgroundColor = ''
-      if (metaThemeColor && originalThemeColor) {
-        metaThemeColor.setAttribute('content', originalThemeColor);
+      if (originalThemeColorsRef.current.length > 0) {
+         originalThemeColorsRef.current.forEach(item => {
+             item.meta.setAttribute('content', item.content);
+         });
+         originalThemeColorsRef.current = []; // Clear it
       } else {
-        const tempMeta = document.getElementById('temp-theme-color');
-        if (tempMeta) tempMeta.remove();
+         const tempMeta = document.getElementById('temp-theme-color');
+         if (tempMeta) tempMeta.remove();
       }
     }
+    
     return () => { 
        document.body.style.overflow = '';
        document.documentElement.style.backgroundColor = '';
-       if (metaThemeColor && originalThemeColor) {
-         metaThemeColor.setAttribute('content', originalThemeColor);
+       if (originalThemeColorsRef.current.length > 0) {
+         originalThemeColorsRef.current.forEach(item => {
+             item.meta.setAttribute('content', item.content);
+         });
+         originalThemeColorsRef.current = [];
        } else {
          const tempMeta = document.getElementById('temp-theme-color');
          if (tempMeta) tempMeta.remove();
