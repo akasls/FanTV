@@ -280,7 +280,8 @@ function PlayerContent() {
     const isAnyFull = isFullscreen || isWebFullscreen || isManualWebFullscreen;
     if (isAnyFull) {
       document.body.style.overflow = 'hidden'
-      document.documentElement.style.backgroundColor = '#000000'
+      document.body.style.setProperty('background-color', '#000000', 'important')
+      document.documentElement.style.setProperty('background-color', '#000000', 'important')
       
       const metaTags = document.querySelectorAll('meta[name="theme-color"]');
       if (metaTags.length > 0) {
@@ -301,7 +302,8 @@ function PlayerContent() {
       }
     } else {
       document.body.style.overflow = ''
-      document.documentElement.style.backgroundColor = ''
+      document.body.style.removeProperty('background-color')
+      document.documentElement.style.removeProperty('background-color')
       if (originalThemeColorsRef.current.length > 0) {
          originalThemeColorsRef.current.forEach(item => {
              item.meta.setAttribute('content', item.content);
@@ -315,7 +317,8 @@ function PlayerContent() {
     
     return () => { 
        document.body.style.overflow = '';
-       document.documentElement.style.backgroundColor = '';
+       document.body.style.removeProperty('background-color');
+       document.documentElement.style.removeProperty('background-color');
        if (originalThemeColorsRef.current.length > 0) {
          originalThemeColorsRef.current.forEach(item => {
              item.meta.setAttribute('content', item.content);
@@ -416,11 +419,16 @@ function PlayerContent() {
                 }).filter((e: any) => e.url)
                   
                   if (eps.length > 0) {
-                     const hist = useAppStore.getState().historyData.find(v => String(v.videoId) === String(id) && String(v._sourceId) === String(sourceId))
+                     const globalHist = useAppStore.getState().historyData.find(v => String(v.videoId) === String(id))
                      let targetEp = eps[0]
-                     if (hist && hist.epUrl) {
-                       const match = eps.find((e: {name: string, url: string}) => e.url === hist.epUrl)
-                       if (match) targetEp = match
+                     if (globalHist && globalHist.epName) {
+                       const matchName = eps.find((e: {name: string, url: string}) => e.name === globalHist.epName || e.name.includes(globalHist.epName || '') || (globalHist.epName || '').includes(e.name))
+                       if (matchName) {
+                          targetEp = matchName
+                       } else {
+                          const matchUrl = eps.find((e: {name: string, url: string}) => e.url === globalHist.epUrl)
+                          if (matchUrl) targetEp = matchUrl
+                       }
                      }
 
                      // This check is now redundant if getBestM3u8List already filters for .m3u8
@@ -584,10 +592,13 @@ function PlayerContent() {
         }
 
         const { enableAdBlock, historyData } = useAppStore.getState()
-        const hist = historyData.find(v => String(v.videoId) === String(id) && String(v._sourceId) === String(sourceId))
+        const globalHistLine = historyData.find(v => String(v.videoId) === String(id))
         let startPos = -1
-        if (hist && hist.epUrl === rawUrl && hist.currentTime && hist.currentTime > 0) {
-           startPos = hist.currentTime
+        if (globalHistLine && globalHistLine.currentTime && globalHistLine.currentTime > 0) {
+           const isSameEp = globalHistLine.epName === epName || (epName && globalHistLine.epName && (epName.includes(globalHistLine.epName) || globalHistLine.epName.includes(epName))) || globalHistLine.epUrl === rawUrl;
+           if (isSameEp) {
+              startPos = globalHistLine.currentTime
+           }
         }
 
         const hlsConfig: any = {
@@ -633,10 +644,13 @@ function PlayerContent() {
         videoRef.current!.src = rawUrl
         
         const { historyData } = useAppStore.getState()
-        const hist = historyData.find(v => String(v.videoId) === String(id) && String(v._sourceId) === String(sourceId))
+        const globalHistLine = historyData.find(v => String(v.videoId) === String(id))
         let startPos = -1
-        if (hist && hist.epUrl === rawUrl && hist.currentTime && hist.currentTime > 0) {
-           startPos = hist.currentTime
+        if (globalHistLine && globalHistLine.currentTime && globalHistLine.currentTime > 0) {
+           const isSameEp = globalHistLine.epName === epName || (epName && globalHistLine.epName && (epName.includes(globalHistLine.epName) || globalHistLine.epName.includes(epName))) || globalHistLine.epUrl === rawUrl;
+           if (isSameEp) {
+              startPos = globalHistLine.currentTime
+           }
         }
 
         videoRef.current!.addEventListener('loadedmetadata', () => {
@@ -856,7 +870,7 @@ function PlayerContent() {
        y: touch.clientY,
        time: Date.now(),
        type: 'none',
-       startVol: videoRef.current?.volume || 0,
+       startVol: volume,
        startBright: brightness,
        startSeek: videoRef.current?.currentTime || 0
     }
