@@ -280,9 +280,7 @@ function PlayerContent() {
     const isAnyFull = isFullscreen || isWebFullscreen || isManualWebFullscreen;
     if (isAnyFull) {
       document.body.style.overflow = 'hidden'
-      document.body.style.setProperty('background-color', '#000000', 'important')
-      document.documentElement.style.setProperty('background-color', '#000000', 'important')
-      document.documentElement.style.setProperty('--background', '#000000') // Force safe-area background on iOS 15+
+      document.documentElement.classList.add('pwa-fullscreen')
       
       const metaTags = document.querySelectorAll('meta[name="theme-color"]');
       if (metaTags.length > 0) {
@@ -306,9 +304,7 @@ function PlayerContent() {
       }
     } else {
       document.body.style.overflow = ''
-      document.body.style.removeProperty('background-color')
-      document.documentElement.style.removeProperty('background-color')
-      document.documentElement.style.removeProperty('--background')
+      document.documentElement.classList.remove('pwa-fullscreen')
       if (originalThemeColorsRef.current.length > 0) {
          originalThemeColorsRef.current.forEach(item => {
              item.meta.setAttribute('content', item.content);
@@ -323,9 +319,7 @@ function PlayerContent() {
     
     return () => { 
        document.body.style.overflow = '';
-       document.body.style.removeProperty('background-color');
-       document.documentElement.style.removeProperty('background-color');
-       document.documentElement.style.removeProperty('--background');
+       document.documentElement.classList.remove('pwa-fullscreen');
        if (originalThemeColorsRef.current.length > 0) {
          originalThemeColorsRef.current.forEach(item => {
              item.meta.setAttribute('content', item.content);

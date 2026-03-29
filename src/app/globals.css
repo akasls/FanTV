@@ -50,3 +50,11 @@ body {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none;    /* Firefox */
 }
+
+/* PWA Fullscreen Theme Override for iOS Safari */
+html.pwa-fullscreen,
+html.pwa-fullscreen body,
+html.pwa-fullscreen main {
+  background-color: #000000 !important;
+  --background: #000000 !important;
+}
