@@ -1457,7 +1457,10 @@ function PlayerContent() {
            {/* Mobile Handlers & Overlays */}
            {/* Lock Button (Mobile Fullscreen Only) */}
            {isAnyFullscreen && (
-             <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-[60] lg:hidden transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+              <div 
+                style={{ left: shouldSimulateLandscape ? 'max(1rem, env(safe-area-inset-top))' : 'max(1rem, env(safe-area-inset-left))' }} 
+                className={`absolute top-1/2 -translate-y-1/2 z-[60] lg:hidden transition-opacity duration-300 ${showControls ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
+              >
                <button 
                  onClick={(e) => { e.stopPropagation(); setIsLocked(!isLocked); setShowControls(true); }}
                  className="p-3 bg-black/50 hover:bg-black/70 rounded-full backdrop-blur-md text-white/80 hover:text-white transition-all pointer-events-auto shadow-xl border border-white/5"
@@ -1469,7 +1472,13 @@ function PlayerContent() {
 
            {/* Mobile Fullscreen Top Header */}
            {isAnyFullscreen && (
-             <div className={`absolute top-0 left-0 right-0 px-4 pt-4 pb-12 bg-gradient-to-b from-black/80 to-transparent z-50 transition-opacity duration-300 pointer-events-none lg:hidden flex justify-between items-start ${showControls && !isLocked ? 'opacity-100' : 'opacity-0'}`}>
+              <div 
+                style={{ 
+                   left: shouldSimulateLandscape ? 'env(safe-area-inset-top)' : 'env(safe-area-inset-left)',
+                   right: shouldSimulateLandscape ? 'env(safe-area-inset-bottom)' : 'env(safe-area-inset-right)'
+                }}
+                className={`absolute top-0 px-4 pt-4 pb-12 bg-gradient-to-b from-black/80 to-transparent z-50 transition-opacity duration-300 pointer-events-none lg:hidden flex justify-between items-start ${showControls && !isLocked ? 'opacity-100' : 'opacity-0'}`}
+              >
                <div className="flex items-center gap-3 pointer-events-auto">
                   <button onClick={(e) => { e.stopPropagation(); toggleFullscreen(e); }} className="p-2 -ml-2 text-white/90 hover:text-white hover:bg-white/20 rounded-full transition-colors drop-shadow">
                      <ArrowLeftIcon className="w-6 h-6" />
@@ -1537,6 +1546,10 @@ function PlayerContent() {
            <video 
              ref={videoRef}
              controls={false}
+             style={{
+                paddingLeft: shouldSimulateLandscape ? 'env(safe-area-inset-top)' : 'env(safe-area-inset-left)',
+                paddingRight: shouldSimulateLandscape ? 'env(safe-area-inset-bottom)' : 'env(safe-area-inset-right)'
+             }}
              className="w-full h-full max-h-full object-contain"
              playsInline
              autoPlay
@@ -1637,7 +1650,15 @@ function PlayerContent() {
            )}
 
            {/* Controls Bottom Bar */}
-           <div {...(isLocked ? { inert: true } : {})} onClick={e => e.stopPropagation()} className={`absolute bottom-0 left-0 right-0 px-4 pb-4 pt-16 bg-gradient-to-t from-black/90 to-transparent z-40 transition-opacity duration-300 ${showControls && !isLocked ? 'opacity-100' : 'opacity-0'} flex flex-col pointer-events-none`}>
+           <div 
+             {...(isLocked ? { inert: true } : {})} 
+             onClick={e => e.stopPropagation()} 
+             style={{
+                left: shouldSimulateLandscape ? 'env(safe-area-inset-top)' : 'env(safe-area-inset-left)',
+                right: shouldSimulateLandscape ? 'env(safe-area-inset-bottom)' : 'env(safe-area-inset-right)'
+             }}
+             className={`absolute bottom-0 px-4 pb-4 pt-16 bg-gradient-to-t from-black/90 to-transparent z-40 transition-opacity duration-300 ${showControls && !isLocked ? 'opacity-100' : 'opacity-0'} flex flex-col pointer-events-none`}
+           >
              <div className="w-full h-1.5 bg-white/30 rounded-full mb-4 cursor-pointer relative group/progress pointer-events-auto">
                <input 
                   type="range" min={0} max={duration || 100} value={currentTime} 
