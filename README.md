@@ -35,7 +35,7 @@ services:
       - "3000:3000"
     volumes:
       # 挂载 SQLite 数据库文件夹至宿主机，防止容器销毁时数据回档及 WAL 缓存丢失
-      - ./data:/app/data
+      - ./data:/app/prisma/db
 ```
 
 在同级目录下执行启动指令一键拉起后端节点：
@@ -51,7 +51,7 @@ docker run -d \
   --name fantv \
   --restart unless-stopped \
   -p 3000:3000 \
-  -v $(pwd)/data:/app/data \
+  -v $(pwd)/data:/app/prisma/db \
   ghcr.io/akasls/fantv:main
 ```
 
