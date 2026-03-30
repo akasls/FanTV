@@ -1099,7 +1099,7 @@ function PlayerContent() {
 
     (async () => {
       try {
-        const fetchUrl = useAppStore.getState().speedTestPlayback === false 
+        const fetchUrl = useAppStore.getState().speedTestPlayback === false || useAppStore.getState().siteConfig?.allowSpeedTest === false
            ? `/api/videos?wd=${encodeURIComponent(targetName)}&mode=${currentMode}&searchAll=true&sortBySourceOrder=true`
            : `/api/videos?wd=${encodeURIComponent(targetName)}&mode=${currentMode}&searchAll=true`;
 
@@ -1139,7 +1139,7 @@ function PlayerContent() {
            return;
         }
 
-        if (useAppStore.getState().speedTestPlayback === false) {
+        if (useAppStore.getState().speedTestPlayback === false || useAppStore.getState().siteConfig?.allowSpeedTest === false) {
              const store = useAppStore.getState();
              const newDisabled = new Set(store.userDisabledSources || []);
              let firstValidAlt: any = null;
@@ -1455,7 +1455,7 @@ function PlayerContent() {
                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
              </svg>
              <span className="text-gray-500 dark:text-gray-400 text-sm font-medium tracking-widest animate-pulse">
-                {isSpeedTestQuery ? (useAppStore.getState().speedTestPlayback === false ? '获取影片播放源中...' : '测速优选视频源中...') : '获取影片信息中...'}
+                {isSpeedTestQuery ? (useAppStore.getState().speedTestPlayback === false || useAppStore.getState().siteConfig?.allowSpeedTest === false ? '获取影片播放源中...' : '测速优选视频源中...') : '获取影片信息中...'}
              </span>
           </div>
        </div>
@@ -1578,7 +1578,7 @@ function PlayerContent() {
               >
                <button 
                  onClick={(e) => { e.stopPropagation(); setIsLocked(!isLocked); setShowControls(true); }}
-                 className="p-3 bg-black/50 hover:bg-black/70 rounded-full backdrop-blur-md text-white/80 hover:text-white transition-all pointer-events-auto shadow-xl border border-white/5"
+                 className={`p-3 bg-black/50 hover:bg-black/70 rounded-full backdrop-blur-md text-white/80 hover:text-white transition-all shadow-xl border border-white/5 ${showControls ? 'pointer-events-auto' : 'pointer-events-none'}`}
                >
                  {isLocked ? <LockClosedIcon className="w-6 h-6" /> : <LockOpenIcon className="w-6 h-6" />}
                </button>
@@ -1594,7 +1594,7 @@ function PlayerContent() {
                 }}
                 className={`absolute top-0 px-4 pt-4 pb-12 bg-gradient-to-b from-black/80 to-transparent z-50 transition-opacity duration-300 pointer-events-none lg:hidden flex justify-between items-start ${showControls && !isLocked ? 'opacity-100' : 'opacity-0'}`}
               >
-               <div className="flex items-center gap-3 pointer-events-auto">
+               <div className={`flex items-center gap-3 ${showControls && !isLocked ? 'pointer-events-auto' : 'pointer-events-none'}`}>
                   <button onClick={(e) => { e.stopPropagation(); toggleFullscreen(e); }} className="p-2 -ml-2 text-white/90 hover:text-white hover:bg-white/20 rounded-full transition-colors drop-shadow">
                      <ArrowLeftIcon className="w-6 h-6" />
                   </button>
@@ -1607,7 +1607,7 @@ function PlayerContent() {
                {episodes.length > 1 && (
                   <button 
                     onClick={(e) => { e.stopPropagation(); setShowMobileEpisodes(!showMobileEpisodes); setShowControls(false); }} 
-                    className="p-1.5 -mr-2 text-white/90 hover:text-white hover:bg-white/20 rounded-full transition-colors pointer-events-auto flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3 border border-white/10"
+                    className={`p-1.5 -mr-2 text-white/90 hover:text-white hover:bg-white/20 rounded-full transition-colors flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3 border border-white/10 ${showControls && !isLocked ? 'pointer-events-auto' : 'pointer-events-none'}`}
                   >
                      <span className="text-[11px] font-bold tracking-wider drop-shadow">选集</span>
                      <ListBulletIcon className="w-4 h-4 drop-shadow" />
@@ -1822,7 +1822,7 @@ function PlayerContent() {
            {/* Big Play Button Overlay for Mobile Taps and Paused State */}
            {!isPlaying && !isLocked && (
              <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-30">
-                <div onClick={togglePlay} className="bg-black/50 p-4 rounded-full backdrop-blur-sm pointer-events-auto cursor-pointer transition transform hover:scale-110">
+                <div onClick={togglePlay} className={`bg-black/50 p-4 rounded-full backdrop-blur-sm cursor-pointer transition transform hover:scale-110 ${!isPlaying && !isLocked ? 'pointer-events-auto' : 'pointer-events-none'}`}>
                   <PlayIcon className="w-12 h-12 text-white/90 translate-x-1" />
                 </div>
              </div>
@@ -1867,7 +1867,7 @@ function PlayerContent() {
                      </button>
                      {altSources.length > 0 && (
                         <button onClick={() => { setShowAltSources(!showAltSources); setShowSkipConfig(false); }} className={`text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center transition-all ${showAltSources ? 'bg-gray-100 text-gray-600 dark:bg-black/40 dark:text-gray-300 dark:border-white/5 border border-transparent shadow-sm' : 'text-white bg-gradient-to-r from-orange-400 to-red-500 shadow-sm hover:opacity-90'}`}>
-                           {showAltSources ? '返回选集' : '测速换源'} {!showAltSources && <span className="bg-white/20 px-1.5 rounded-full ml-1 font-mono">{altSources.length}</span>}
+                           {showAltSources ? '返回选集' : (useAppStore.getState().siteConfig?.allowSpeedTest === false ? '更换源站' : '测速换源')} {!showAltSources && <span className="bg-white/20 px-1.5 rounded-full ml-1 font-mono">{altSources.length}</span>}
                         </button>
                      )}
                   </div>
@@ -1909,9 +1909,11 @@ function PlayerContent() {
                                  <span className="font-bold text-blue-600 dark:text-blue-400 mr-2">{video?._sourceName}</span>
                                  <span className="text-[10px] font-medium bg-blue-500 text-white px-1.5 py-0.5 rounded-full flex-shrink-0">当前源</span>
                               </div>
-                              <span className={`text-[10px] flex-shrink-0 ml-2 px-1.5 py-0.5 rounded font-mono transition-colors ${!pingResults[sourceId!] ? 'bg-blue-100 text-blue-400 dark:bg-blue-900/30 dark:text-blue-600' : pingResults[sourceId!].ping === -1 ? 'bg-red-100 text-red-500 dark:bg-red-900/30' : pingResults[sourceId!].ping < 500 ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30' : 'bg-orange-100 text-orange-600 dark:bg-orange-900/30'}`}>
-                                 {!pingResults[sourceId!] ? '测速中...' : pingResults[sourceId!].ping === -1 ? '超时' : `${pingResults[sourceId!].ping}ms${pingResults[sourceId!].speed ? ` | ${formatSpeed(pingResults[sourceId!].speed)}` : ''}`}
-                              </span>
+                              {useAppStore.getState().siteConfig?.allowSpeedTest !== false && (
+                                 <span className={`text-[10px] flex-shrink-0 ml-2 px-1.5 py-0.5 rounded font-mono transition-colors ${!pingResults[sourceId!] ? 'bg-blue-100 text-blue-400 dark:bg-blue-900/30 dark:text-blue-600' : pingResults[sourceId!].ping === -1 ? 'bg-red-100 text-red-500 dark:bg-red-900/30' : pingResults[sourceId!].ping < 500 ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/30' : 'bg-orange-100 text-orange-600 dark:bg-orange-900/30'}`}>
+                                    {!pingResults[sourceId!] ? '测速中...' : pingResults[sourceId!].ping === -1 ? '超时' : `${pingResults[sourceId!].ping}ms${pingResults[sourceId!].speed ? ` | ${formatSpeed(pingResults[sourceId!].speed)}` : ''}`}
+                                 </span>
+                              )}
                            </div>
                            <span className="text-[11px] text-blue-400 dark:text-blue-500 truncate w-full relative z-10">{video?.vod_remarks || '进度未知'}</span>
                          </div>
@@ -1929,9 +1931,11 @@ function PlayerContent() {
                                 <div className="flex items-center">
                                    <span className="font-bold text-gray-800 dark:text-gray-200 group-hover:text-orange-500 transition-colors truncate pr-2">{alt._sourceName}</span>
                                 </div>
-                                <span className={`text-[10px] flex-shrink-0 ml-2 px-1.5 py-0.5 rounded font-mono transition-colors ${!pingResults[alt._sourceId] ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500' : pingResults[alt._sourceId].ping === -1 ? 'bg-red-100 text-red-500 dark:bg-red-900/30' : pingResults[alt._sourceId].ping < 500 ? 'bg-green-100 text-green-600 dark:bg-green-900/30' : 'bg-orange-100 text-orange-600 dark:bg-orange-900/30'}`}>
-                                   {!pingResults[alt._sourceId] ? '测速中...' : pingResults[alt._sourceId].ping === -1 ? '超时' : `${pingResults[alt._sourceId].ping}ms${pingResults[alt._sourceId].speed ? ` | ${formatSpeed(pingResults[alt._sourceId].speed)}` : ''}`}
-                                </span>
+                                {useAppStore.getState().siteConfig?.allowSpeedTest !== false && (
+                                   <span className={`text-[10px] flex-shrink-0 ml-2 px-1.5 py-0.5 rounded font-mono transition-colors ${!pingResults[alt._sourceId] ? 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500' : pingResults[alt._sourceId].ping === -1 ? 'bg-red-100 text-red-500 dark:bg-red-900/30' : pingResults[alt._sourceId].ping < 500 ? 'bg-green-100 text-green-600 dark:bg-green-900/30' : 'bg-orange-100 text-orange-600 dark:bg-orange-900/30'}`}>
+                                      {!pingResults[alt._sourceId] ? '测速中...' : pingResults[alt._sourceId].ping === -1 ? '超时' : `${pingResults[alt._sourceId].ping}ms${pingResults[alt._sourceId].speed ? ` | ${formatSpeed(pingResults[alt._sourceId].speed)}` : ''}`}
+                                   </span>
+                                )}
                              </div>
                              <span className="text-[11px] text-gray-400 truncate w-full relative z-10">{alt.vod_remarks || '进度未知'}</span>
                           </button>

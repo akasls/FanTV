@@ -29,7 +29,7 @@ export async function PUT(request: NextRequest) {
     if (!payload || payload.role !== 'ADMIN') return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
     
     const body = await request.json()
-    const { allowRegistration, allowGuestAccess, siteName, siteDescription, siteLogo, doubanDataProxy, doubanImageProxy, speedTestPlayback, removeTsAd, shortDramaApiUrl, shortDramaCategories } = body
+    const { allowRegistration, allowGuestAccess, siteName, siteDescription, siteLogo, doubanDataProxy, doubanImageProxy, allowSpeedTest, speedTestPlayback, removeTsAd, shortDramaApiUrl, shortDramaCategories } = body
 
     const updateData: any = {}
     if (allowRegistration !== undefined) updateData.allowRegistration = allowRegistration
@@ -39,6 +39,7 @@ export async function PUT(request: NextRequest) {
     if (siteLogo !== undefined) updateData.siteLogo = siteLogo
     if (doubanDataProxy !== undefined) updateData.doubanDataProxy = doubanDataProxy
     if (doubanImageProxy !== undefined) updateData.doubanImageProxy = doubanImageProxy
+    if (allowSpeedTest !== undefined) updateData.allowSpeedTest = allowSpeedTest
     if (speedTestPlayback !== undefined) updateData.speedTestPlayback = speedTestPlayback
     if (removeTsAd !== undefined) updateData.removeTsAd = removeTsAd
     if (shortDramaApiUrl !== undefined) updateData.shortDramaApiUrl = shortDramaApiUrl
@@ -56,7 +57,8 @@ export async function PUT(request: NextRequest) {
          siteLogo: siteLogo ?? '',
          doubanDataProxy: doubanDataProxy ?? '',
          doubanImageProxy: doubanImageProxy ?? '',
-         speedTestPlayback: speedTestPlayback ?? true,
+         allowSpeedTest: allowSpeedTest ?? true,
+         speedTestPlayback: speedTestPlayback ?? false,
          removeTsAd: removeTsAd ?? false,
          shortDramaApiUrl: shortDramaApiUrl ?? null,
          shortDramaCategories: shortDramaCategories ?? null

@@ -41,6 +41,7 @@ export default function SettingsPage() {
   const isAdmin = currentUser?.role === "ADMIN";
   const [allowRegistration, setAllowRegistration] = useState(false);
   const [allowGuestAccess, setAllowGuestAccess] = useState(false);
+  const [allowSpeedTest, setAllowSpeedTest] = useState(true);
 
   // Local states for custom proxy inputs
   const [tempDoubanDataProxyCustom, setTempDoubanDataProxyCustom] =
@@ -68,6 +69,9 @@ export default function SettingsPage() {
           if (data && typeof data.allowGuestAccess === "boolean") {
             setAllowGuestAccess(data.allowGuestAccess);
           }
+          if (data && typeof data.allowSpeedTest === "boolean") {
+            setAllowSpeedTest(data.allowSpeedTest);
+          }
         });
     }
   }, [isAdmin]);
@@ -90,6 +94,17 @@ export default function SettingsPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ allowGuestAccess: nextVal }),
     });
+  };
+
+  const toggleSpeedTest = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const nextVal = e.target.checked;
+    setAllowSpeedTest(nextVal);
+    await fetch("/api/system-settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ allowSpeedTest: nextVal }),
+    });
+    if (siteConfig) useAppStore.getState().setSiteConfig({ ...siteConfig, allowSpeedTest: nextVal });
   };
 
   const handleLogout = async () => {
@@ -134,7 +149,7 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {currentMode !== "Adult" && (
+          {currentMode !== "Adult" && siteConfig?.allowSpeedTest !== false && (
             <div className="flex items-center justify-between p-4 md:p-6 transition-colors">
               <div>
                 <h3 className="font-medium">测速播放</h3>
@@ -445,6 +460,24 @@ export default function SettingsPage() {
                     className="sr-only peer"
                     checked={allowGuestAccess}
                     onChange={toggleGuestAccess}
+                  />
+                  <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-500"></div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between p-4 md:p-6 transition-colors border-t border-gray-100 dark:border-gray-800/80">
+                <div>
+                  <h3 className="font-medium">全局测速播放</h3>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    是否允许终端用户使用测速功能寻找最佳源
+                  </p>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={allowSpeedTest}
+                    onChange={toggleSpeedTest}
                   />
                   <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-500"></div>
                 </label>

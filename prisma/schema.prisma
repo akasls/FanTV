@@ -79,7 +79,8 @@ model SystemSetting {
   adultModePassword String   @default("")
   doubanDataProxy   String   @default("")
   doubanImageProxy  String   @default("")
-  speedTestPlayback Boolean  @default(true) // 播放测速
+  allowSpeedTest    Boolean  @default(true) // 全局测速播放
+  speedTestPlayback Boolean  @default(false) // 播放测速
   removeTsAd        Boolean  @default(false)
   shortDramaApiUrl  String?
   shortDramaCategories String? // JSON string of subcategories [{name, url}]

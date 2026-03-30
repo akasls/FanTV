@@ -12,6 +12,7 @@ export interface SiteConfig {
   siteLogo?: string
   doubanDataProxy?: string
   doubanImageProxy?: string
+  allowSpeedTest?: boolean
   speedTestPlayback?: boolean
   removeTsAd?: boolean
   shortDramaApiUrl?: string | null
@@ -113,6 +114,8 @@ interface AppState {
   historyData: VideoItem[]
   favoriteData: VideoItem[]
   homeFeedList: VideoItem[]
+  categoriesCache: Record<string, any[]>
+  setCategoriesCache: (sourceId: string, cats: any[]) => void
   searchHistory: SearchHistoryItem[]
 
   setAllowAdultMode: (allow: boolean) => void
@@ -152,7 +155,7 @@ export const useAppStore = create<AppState>()(
       isFilterExpanded: true,
       setIsFilterExpanded: (v) => set({ isFilterExpanded: v }),
       
-      speedTestPlayback: true,
+      speedTestPlayback: false,
       setSpeedTestPlayback: (v) => set({ speedTestPlayback: v }),
       doubanDataProxy: '',
       setDoubanDataProxy: (v) => set({ doubanDataProxy: v }),
@@ -199,6 +202,7 @@ export const useAppStore = create<AppState>()(
                  siteName: data.config.siteName,
                  siteDescription: data.config.siteDescription,
                  siteLogo: data.config.siteLogo,
+                 allowSpeedTest: data.config.allowSpeedTest,
                  speedTestPlayback: data.config.speedTestPlayback,
                  removeTsAd: data.config.removeTsAd,
                  shortDramaApiUrl: data.config.shortDramaApiUrl,
@@ -207,7 +211,7 @@ export const useAppStore = create<AppState>()(
              
              // Baseline fallback configurations
              if (!data.user || data.user.speedTestPlayback === null) {
-                set({ speedTestPlayback: data.config.speedTestPlayback ?? true });
+                set({ speedTestPlayback: data.config.speedTestPlayback ?? false });
              }
              if (!data.user || data.user.doubanDataProxy === null) {
                 set({ doubanDataProxy: data.config.doubanDataProxy || '' });
@@ -359,7 +363,9 @@ export const useAppStore = create<AppState>()(
       clearSearchHistory: (mode) => set(state => ({
          searchHistory: state.searchHistory.filter(h => h.mode !== mode)
       })),
-      clearCache: () => set({ historyData: [], favoriteData: [], homeFeedList: [], searchHistory: [] })
+      categoriesCache: {},
+      setCategoriesCache: (sourceId, cats) => set(state => ({ categoriesCache: { ...state.categoriesCache, [sourceId]: cats } })),
+      clearCache: () => set({ historyData: [], favoriteData: [], homeFeedList: [], searchHistory: [], categoriesCache: {} })
     }),
     {
       name: 'fantv-storage',

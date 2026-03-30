@@ -338,9 +338,16 @@ const API_DELAY = 1000;
     const fetchCats = async () => {
       setLoadingCategories(true);
       try {
+        const store = useAppStore.getState();
+        if (store.categoriesCache[selectedSourceId]) {
+           setCategories(store.categoriesCache[selectedSourceId]);
+           setLoadingCategories(false);
+           return;
+        }
         const res = await fetch(`/api/categories?sourceId=${selectedSourceId}`);
         const data = await res.json();
         setCategories(data.categories || []);
+        store.setCategoriesCache(selectedSourceId, data.categories || []);
       } catch (e) {
         console.error(e);
       } finally {
