@@ -38,7 +38,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV DATABASE_URL="file:../data/fantv.db"
+ENV DATABASE_URL="file:/app/data/fantv.db"
 
 # Create non-root user
 RUN groupadd --system --gid 1001 nodejs && \
