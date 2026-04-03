@@ -1634,7 +1634,7 @@ function PlayerContent() {
                  </div>
                  <div className="flex-1 overflow-y-auto p-4 custom-scrollbar grid grid-cols-2 gap-2 content-start">
                     {episodes.map((ep, idx) => {
-                       const isActive = ep.name === epName || (video && ep.name === video.vod_play_list[0]?.urls?.[currentIndex]?.name);
+                       const isActive = ep.name === epName || (video && ep.name === video.vod_play_list?.[0]?.urls?.[currentIndex]?.name);
                        return (
                          <button
                            key={idx}
@@ -1774,7 +1774,7 @@ function PlayerContent() {
              }}
              className={`absolute bottom-0 px-4 pb-4 pt-16 bg-gradient-to-t from-black/90 to-transparent z-40 transition-opacity duration-300 ${showControls && !isLocked ? 'opacity-100' : 'opacity-0'} flex flex-col pointer-events-none`}
            >
-             <div className="w-full h-1.5 bg-white/30 rounded-full mb-4 cursor-pointer relative group/progress pointer-events-auto">
+             <div className={`w-full h-1.5 bg-white/30 rounded-full mb-4 cursor-pointer relative group/progress ${showControls && !isLocked ? 'pointer-events-auto' : 'pointer-events-none'}`}>
                <input 
                   type="range" min={0} max={duration || 100} value={currentTime} 
                   onChange={handleSeek}
@@ -1783,7 +1783,7 @@ function PlayerContent() {
                <div className="absolute top-0 left-0 bottom-0 bg-blue-500 rounded-full pointer-events-none" style={{ width: `${Math.min(100, (currentTime/(duration||1))*100)}%` }}></div>
              </div>
 
-             <div className="flex items-center justify-between pointer-events-auto">
+             <div className={`flex items-center justify-between ${showControls && !isLocked ? 'pointer-events-auto' : 'pointer-events-none'}`}>
                <div className="flex items-center space-x-4">
                   <button onClick={togglePlay} className="text-white hover:text-blue-400 transition transform hover:scale-110">
                      {isPlaying ? <PauseIcon className="w-6 h-6" /> : <PlayIcon className="w-6 h-6" />}
